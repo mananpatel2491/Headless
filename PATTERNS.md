@@ -19,8 +19,8 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   script, reviewed in the preview before `--apply`.
 - **`Session.fill` is the only sanctioned way to type; `Session.page` is exposed for reads
   (v0.0.1).** A structural test (`tests/test_no_direct_typing.py`) parses `scripts/*.py` with `ast` and
-  refuses any direct `.fill(`, `.type(`, `.press(`, `.click(`, `.select_option(`, or `.check(`
-  call on a page or locator, so an errand cannot type outside the registry/vault/literal path
+  refuses any direct `.fill(`, `.type(`, `.press(`, `.click(`, `.dblclick(`, `.select_option(`,
+  `.check(`, or `.set_input_files(` call on a page or locator, so an errand cannot type outside the registry/vault/literal path
   without failing the commit gate. This replaces an earlier, weaker claim ("derived or
   LLM-produced values are structurally unwritable") that described only the `FieldPlan`/`Source`
   type shape, not an enforced boundary; the mechanical scan is the actual enforcement.
