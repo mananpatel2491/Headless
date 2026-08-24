@@ -56,7 +56,7 @@ browser (FR-008); $0 cloud cost (constitution Lesson 5)
 | V. IaC and Cost Gating | PASS | No cloud resource is created in this feature; the GCP backend is code-only and its future project is described with a $0 projection in `terraform/README.md`. |
 | Gates hard rule | PASS | `Mode` has three values; `resolve_mode` refuses apply without TTY or headed; no submit flag or helper exists (contract lists the forbidden flags and a test asserts the parser rejects them). |
 | Secrets hard rule | PASS | Vault seam; `.env` documented as non-secret; `PreviewRecord` masks at construction; `Session.fill` accepts only `FieldPlan`. |
-| Browser hard rule | PASS | Dedicated persistent profile outside the repo; headless only for check/preview; CDP attach optional. |
+| Browser hard rule | PASS | Dedicated persistent profile outside the repo; invisible by default (headless for preview/check, quiet window for apply, `--show` to watch); CDP attach optional. |
 | Spec-driven workflow | PASS | This feature runs specify -> plan -> tasks -> implement on `v0.0.1` in a worktree. |
 
 No violations; Complexity Tracking is empty.

@@ -34,19 +34,20 @@ on `vault` naming the missing setting, exit 1.
 python scripts/probe.py https://example.com
 ```
 
-Expected: a visible Chrome window opens on the page, the title `Example Domain` is
-printed, and `previews/probe-<timestamp>.png` and `.json` exist. The profile directory
-`~/.headless/chrome-profile` now exists.
+Expected: no window appears (quiet by default); the title `Example Domain` is printed and
+`previews/probe-<timestamp>.png` and `.json` exist. The profile directory
+`~/.headless/chrome-profile` now exists. Add `--show` to watch the run.
 
 For the login persistence check, run `python scripts/probe.py <login-protected site>
---apply`, log in by hand in the window, press Enter in the terminal, then run the same
-command again: the page opens already logged in.
+--apply`: the window stays hidden until the "Your turn" prompt, then comes to the front;
+log in by hand, press Enter in the terminal, then run the same command again: the page
+opens already logged in.
 
 ## Scenario 3: secrets never leak (US2, SC-002)
 
 ```bash
 security add-generic-password -a headless -s headless-test-secret -w 'hunter2-XY' -U
-python -m pytest -q tests/test_redaction.py tests/test_preview.py
+python -m pytest -q tests/test_fields.py tests/test_preview.py
 security delete-generic-password -a headless -s headless-test-secret
 ```
 

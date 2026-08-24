@@ -16,13 +16,18 @@ preview artifacts.
 | `secrets_backend` | `"keychain"` or `"gcp"` | `HEADLESS_SECRETS_BACKEND` (default keychain) | any other value is a `ConfigError` |
 | `keychain_account` | str | `HEADLESS_KEYCHAIN_ACCOUNT` (default `headless`) | |
 | `gcp_project` | str or None | `HEADLESS_GCP_PROJECT` | required when backend is `gcp`, else `ConfigError` |
-| `preview_dir` | Path | `HEADLESS_PREVIEW_DIR` (default `previews`), `--preview-dir` | created on first write |
+| `preview_dir` | Path | `HEADLESS_PREVIEW_DIR` (default `previews`, must be absolute or that literal default - N3), `--preview-dir` | created on first write; resolves against the repo root, never cwd |
+| `screenshots` | bool | `HEADLESS_SCREENSHOTS` (default 1), `--no-screenshot` | `False` writes JSON only |
+| `show` | bool | `HEADLESS_SHOW` (default 0), `--show` | quiet by default (v0.0.1, Director decision 2026-08-24); see Mode below |
 
 Validation happens in `load_config()` before any browser or vault call (FR-004, SC-006).
 
 ## Mode
 
-Enumeration `preview | apply | check`, resolved by `resolve_mode(args, isatty, headed)`:
+Enumeration `preview | apply | check`, resolved by `resolve_mode(args, isatty, headed)`. This
+gate is unchanged by "quiet by default": `headed` here is `Config.headed` -
+"can a real windowed Chrome process be produced at all" (`HEADLESS_HEADED`, `--headless`) -
+not whether the window is actually shown.
 
 | Flags | isatty | headed | Result |
 | :--- | :--- | :--- | :--- |
@@ -32,8 +37,25 @@ Enumeration `preview | apply | check`, resolved by `resolve_mode(args, isatty, h
 | `--apply` | false | any | `GateRefused("apply needs an interactive terminal")` |
 | `--apply` | true | false | `GateRefused("apply needs a visible browser")` |
 | `--apply --check` | | | argparse error (mutually exclusive) |
+| `--apply --headless` | | | `GateRefused("apply needs a visible browser")` (`--headless` forces `headed=False`) |
+| `--headless --show` | | | argparse error (mutually exclusive) |
 
 There is no fourth value. No helper accepts a "submit" or "otp" concept (FR-007).
+
+**Window visibility, separately from the mode gate above** (`headless/session.py`'s
+`_effective_headed(mode, config)`, resolved after mode, only once a `Session` is about to
+open):
+
+| Mode | `show` | Launch visibility |
+| :--- | :--- | :--- |
+| preview / check | `False` (default) | invisible (Chrome headless mode), regardless of `HEADLESS_HEADED` |
+| preview / check | `True` (`--show` or `HEADLESS_SHOW=1`) | visible from launch |
+| apply | any | real window (`config.headed`, already gated `True` above); hidden immediately after launch and restored only at `handoff()` unless `show` is `True` |
+
+`--headless` forces invisible for preview/check (redundant with the default, but explicit and
+overrides `HEADLESS_SHOW=1`); combined with `--apply` it is refused per the mode table above,
+since the handoff needs a window. `--show` forces visible for any mode - for apply this means
+skipping the quiet-until-handoff hide, not a different launch mode.
 
 ## FieldPlan
 

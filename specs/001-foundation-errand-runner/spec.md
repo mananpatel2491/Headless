@@ -23,10 +23,11 @@ two errands that prove them: an environment self-test and a URL probe.
 
 ### User Story 1 - Stay logged in between runs (Priority: P1)
 
-The Director runs the probe errand against a site, sees a Chrome window open (not hidden),
-logs in by hand once, and closes the run. On the next run against the same site the page
-opens already logged in. Every run leaves a preview artifact (a screenshot and a small JSON
-record) the Director can open afterwards.
+The Director runs the probe errand against a site; the run is invisible by default and
+leaves a preview artifact (a screenshot and a small JSON record) the Director can open
+afterwards. With `--apply`, a window opens hidden and is surfaced only at the handoff,
+where the Director logs in by hand once and closes the run. On the next run against the
+same site the page opens already logged in.
 
 **Why this priority**: Login and two-factor steps are where browser automation fails most.
 Persisting a hand-seeded session removes that failure class for every later errand. Without
@@ -39,12 +40,14 @@ holds two screenshot and JSON pairs.
 **Acceptance Scenarios**:
 
 1. **Given** no Headless profile directory exists, **When** the Director runs `probe` with a
-   URL, **Then** the profile directory is created, a visible Chrome window opens on that URL,
-   and a preview artifact is written.
+   URL, **Then** the profile directory is created, no window appears (preview) and a preview
+   artifact is written.
 2. **Given** the Director logged in during a previous run, **When** `probe` runs again on the
    same site, **Then** the page opens in the logged-in state with no credential entry.
 3. **Given** the Director's everyday Chrome is open, **When** Headless runs, **Then** the
    everyday browser and its profile are untouched.
+4. **Given** `--apply` on a login page, **When** the handoff is reached, **Then** the window
+   is brought to the front for the Director to log in.
 
 ---
 
@@ -147,8 +150,9 @@ the profile directory read-only and see that row fail with an instruction.
 
 ### Functional Requirements
 
-- **FR-001**: The runner MUST open a visible browser window on a persistent Headless-only
-  profile stored outside the repository at a configurable location, creating it when absent.
+- **FR-001**: The runner MUST run invisibly by default on a persistent Headless-only profile
+  stored outside the repository at a configurable location, creating it when absent; a
+  visible window MUST appear only at the apply handoff or when the Director requests it.
 - **FR-002**: The runner MUST be able to attach to an already-running browser when a
   debugging endpoint is configured, instead of launching one.
 - **FR-003**: The runner MUST fetch secrets from a vault backend at fill-time through one
@@ -167,16 +171,20 @@ the profile directory read-only and see that row fail with an instruction.
   Director confirms.
 - **FR-008**: Apply mode MUST refuse to start from a non-interactive terminal and MUST refuse
   to run in invisible (headless) browser mode.
-- **FR-009**: Every run MUST write a preview artifact consisting of a screenshot and a JSON
-  record (errand, mode, address, timestamp, planned fields) where every value has passed
-  through a redaction step: secrets and registry values are masked to their last two
-  characters.
-- **FR-010**: No secret or registry value MAY appear in stdout, logs, or preview files.
+- **FR-009**: Every run MUST write a preview artifact consisting of a JSON record (errand,
+  mode, address, timestamp, planned fields) where every value has passed through a
+  redaction step (secrets and registry values masked to their last two characters) and,
+  unless disabled, a screenshot in which form-control text is masked.
+- **FR-010**: No secret or registry value MAY appear in stdout, stderr, logs, or the JSON
+  preview record; the screenshot may show data the page itself renders and is therefore
+  stored only under the gitignored preview directory inside the repository.
 - **FR-011**: The `check_env` errand MUST report, per component (browser, profile directory,
   vault backend, automation runtime), pass or fail with a remediation hint, and MUST exit
   non-zero on any failure.
 - **FR-012**: The `probe` errand MUST open a given address in the Headless profile, write a
-  preview artifact, and print the page title; it MUST run visible by default.
+  preview artifact, and print the page title; it MUST run invisibly by default and MUST
+  surface its window at the handoff when run with `--apply` (login seeding) or throughout
+  with `--show`.
 - **FR-013**: Non-secret configuration MUST come from environment variables (optionally via
   a `.env` file) with command-line overrides; documentation MUST state that `.env` never
   holds secrets.
@@ -234,3 +242,7 @@ the profile directory read-only and see that row fail with an instruction.
   feature ships only `check_env` and `probe`.
 - The mananUtils worktree protocol and the repo's constitution (`CLAUDE.md`) apply; the
   feature branch is `v0.0.1`.
+- Amended 2026-08-24 during implementation: screenshot redaction scope clarified (see
+  FR-009/FR-010); preview directory defaults to the repository's `previews/`.
+- Amended 2026-08-24 (Director decision): invisible by default; anti-bot behaviour of
+  headless Chrome is discovered per site via `--check` and worked around with `--show`.

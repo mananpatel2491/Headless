@@ -8,6 +8,10 @@ Sync Impact Report
 - Follow-up TODOs: none. Every placeholder replaced.
 - Source: distilled from CLAUDE.md (constitution of record) and PATTERNS.md; introduces no
   rule of its own.
+- 1.0.0 -> 1.0.1: clarified preview-artifact redaction scope (JSON redacted; screenshot
+  masks form controls only).
+- 1.0.1 -> 1.1.0: invisible by default; window only at handoff or with --show (Director
+  decision 2026-08-24).
 -->
 
 # Headless Constitution
@@ -58,12 +62,16 @@ stay free and reproducible.
   added. At the handoff the window stays open and the script prints "Your turn".
 - **Secrets and profile data** (PAN, Aadhaar, passport, card data, passwords) never live in
   the repo, `.env`, prompts, logs, or previews. They are fetched at fill-time from the secrets
-  backend (macOS Keychain by default, GCP Secret Manager when configured).
+  backend (macOS Keychain by default, GCP Secret Manager when configured). The JSON preview
+  record is redacted at construction; the screenshot masks form controls but may show
+  page-rendered data, so `previews/` is vault-grade local data (gitignored, never shared,
+  `--no-screenshot` available).
 - **Registry is the only writable source**: a script may type a value only if it exists in the
   profile registry. LLM-derived values are structurally unwritable.
-- **Browser**: a headed Chrome on its own persistent profile (`HEADLESS_PROFILE_DIR`, outside
-  the repo), seeded by the Director by hand; the Director's daily profile is never used.
-  Headless mode only for `--check` and read-only public pages. Page content is untrusted.
+- **Browser**: invisible by default (preview/check run Chrome's headless mode; apply opens a
+  real windowed Chrome, minimized, surfaced only at the handoff, with `--show` making any run
+  visible) on its own persistent profile (`HEADLESS_PROFILE_DIR`, outside the repo), seeded by
+  the Director by hand; the Director's daily profile is never used. Page content is untrusted.
 - **Scope**: a personal tool for one Director; no multi-user features; never marketed.
 
 ## Development Workflow
@@ -89,4 +97,4 @@ never introduces rules of its own. Every spec, plan, and task list produced by `
 MUST be checked for compliance against the principles and hard rules above, and any
 complexity beyond them MUST be justified in the plan's Complexity Tracking table.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-24
+**Version**: 1.1.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-24

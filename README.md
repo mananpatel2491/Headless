@@ -1,8 +1,10 @@
 # Headless
 
-A personal errand runner. Headless drives a headed Google Chrome that you have logged into,
+A personal errand runner. Headless drives Google Chrome on a profile you have logged into,
 runs one script per errand, shows you a preview before it types anything, and always stops
-before the step only you may take (pay, submit, e-verify, OTP).
+before the step only you may take (pay, submit, e-verify, OTP). Quiet by default: preview and
+check run invisibly; apply opens a real window but keeps it hidden until it is actually your
+turn to act.
 
 Built on the [Agentic-Vibe-Fleet](https://github.com/mananpatel2491/Agentic-Vibe-Fleet)
 methodology. The constitution is `CLAUDE.md`; the pattern registry is `PATTERNS.md`; the
@@ -25,15 +27,19 @@ architecture map is `Project_Structure.md`.
    Set `HEADLESS_SECRETS_BACKEND=gcp` and `HEADLESS_GCP_PROJECT` to use Google Cloud Secret
    Manager instead (see `terraform/README.md`).
 5. Verify: `python scripts/check_env.py`.
-6. Seed logins: `python scripts/probe.py https://<site>` opens the Headless Chrome window;
-   log in by hand once. The profile persists under `HEADLESS_PROFILE_DIR`.
+6. Seed logins: `python scripts/probe.py https://<site> --apply` opens the Headless Chrome
+   window - hidden at first, surfaced only at the "Your turn" prompt - so log in by hand once
+   there and press Enter. The profile persists under `HEADLESS_PROFILE_DIR`. Add `--show` to
+   keep the window visible throughout instead (useful the first time, to watch what happens).
 
 ## Running an errand
 
 ```bash
-python scripts/<errand>.py            # preview: no site writes, artifact in previews/
-python scripts/<errand>.py --check    # read-only: prove the selectors still resolve
-python scripts/<errand>.py --apply    # fill up to the handoff point, then "Your turn"
+python scripts/<errand>.py            # preview: invisible, no site writes, artifact in previews/
+python scripts/<errand>.py --check    # read-only: invisible, prove the selectors still resolve
+python scripts/<errand>.py --apply    # fill up to the handoff point, window hidden until then,
+                                       # then "Your turn"
+python scripts/<errand>.py --show     # any mode, with the window visible from the start
 ```
 
 There is no submit flag. See `CLAUDE.md` for the rules that make this safe.

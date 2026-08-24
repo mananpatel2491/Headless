@@ -6,7 +6,11 @@ errand is added, changed, or retired.
 
 | Errand script | Site(s) | Reads | Writes (up to) | Secrets / profile fields | Handoff point (human-only after this) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| *scripts/probe.py* | *any URL* | *page title, screenshot* | *none* | *none* | *n/a (read-only)* |
+| `scripts/probe.py` | any URL | page title, screenshot | none | none | `n/a (read-only errand)`: `--apply` still performs the handoff with an empty plan, so the Director can seed a login |
+
+`scripts/check_env.py` is a maintenance script, not an errand (see `scripts/README.md`): it opens no
+browser window, has no site, and the errand contract (modes, `HANDOFF`) does not apply, so it has no
+row here.
 
 ## Maintenance Rules
 

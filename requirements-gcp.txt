@@ -1,0 +1,4 @@
+# Optional extra: only needed when HEADLESS_SECRETS_BACKEND=gcp is activated.
+# Not part of requirements.txt; headless/secrets.py imports google.cloud lazily
+# so the base install never needs this.
+google-cloud-secret-manager>=2.20
