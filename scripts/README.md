@@ -10,12 +10,13 @@ from cron or CI.
 | Script | Description |
 | :--- | :--- |
 | `verify_structure.py` | Fails (exit 1) when a file on disk is missing from the `Project_Structure.md` Changelog. Part of the commit gate. `--dry-run` prints a read-only notice. |
+| `check_env.py` | Environment self-test: Chrome (`chrome` channel), Playwright runtime + browser cache, profile directory, secrets vault. Prints PASS/FAIL/SKIP per row; opens no browser window. Not a browser errand; the errand contract below does not apply (no preview/apply/check modes, no `HANDOFF`). Usage: `python scripts/check_env.py`. |
 
 ## Errands
 
 | Script | Description |
 | :--- | :--- |
-| *(none yet)* | Errand scripts arrive with spec 001 (`check_env.py`, `probe.py`). Each is documented here and in `Function_Mapping.md` in the same commit. |
+| `probe.py` | Open a URL in the Headless profile and write a preview artifact; prints the page title. Read-only (`HANDOFF = "n/a (read-only errand)"`); `--apply` still performs the handoff with an empty plan so the Director can seed a login. Usage: `python scripts/probe.py <URL> [--apply|--check] [--profile-dir PATH] [--headless] [--preview-dir PATH] [--no-screenshot]`. |
 
 ## Errand contract
 

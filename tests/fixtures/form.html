@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Headless test fixture form</title>
+</head>
+<body>
+<h1>Headless test fixture form</h1>
+<form id="fixture-form">
+  <label for="full_name">Full name</label>
+  <input type="text" id="full_name" name="full_name">
+
+  <label for="pan">PAN</label>
+  <input type="text" id="pan" name="pan">
+
+  <label for="email">Email</label>
+  <input type="text" id="email" name="email">
+
+  <label for="form_type">Form type</label>
+  <select id="form_type" name="form_type">
+    <option value="ITR-1">ITR-1</option>
+    <option value="ITR-2">ITR-2</option>
+  </select>
+
+  <label for="agree">Agree</label>
+  <input type="checkbox" id="agree" name="agree">
+
+  <label for="notes">Notes (contenteditable)</label>
+  <div id="notes" contenteditable="true"></div>
+
+  <button type="button" id="submit">Submit</button>
+</form>
+
+<div id="clicks" hidden></div>
+
+<script>
+  document.getElementById("submit").addEventListener("click", function () {
+    document.getElementById("clicks").textContent = "submitted";
+  });
+</script>
+</body>
+</html>

@@ -63,17 +63,23 @@ run repetitive work-portal chores.
 - A script may type a value into a site only if that value exists in the profile registry.
   Nothing an LLM derives is ever typed. (Same rule as the hand-authored `PROPOSALS` registry
   in the Director's Atlassian toolkit, applied to forms.)
-- Preview artifacts pass through the redaction layer before they are written.
+- The JSON half of every preview artifact passes through the redaction layer before it is
+  written. The screenshot half masks form-control text but can still show data the page
+  itself renders (a logged-in portal shows the Director's name), so `previews/` is
+  vault-grade local data: gitignored, never shared or attached anywhere, disposable, and
+  skippable with `--no-screenshot`.
 
 ### Browser
-- Headless drives a **headed** Chrome with its own persistent profile at
-  `HEADLESS_PROFILE_DIR` (default `~/.headless/chrome-profile`, outside the repo). The
-  Director seeds logins by hand in that window once. The Director's daily Chrome profile is
-  never used. Chrome 136+ refuses remote debugging on the default profile anyway.
-- Headless mode (`HEADLESS_HEADED=0`) is permitted only for `--check` and for read-only
-  public pages; many consumer sites fingerprint headless Chrome.
+- Headless is invisible by default: preview and check run in Chrome's headless mode on the
+  Headless profile (`HEADLESS_PROFILE_DIR`, default `~/.headless/chrome-profile`, outside the
+  repo). Apply runs a real windowed Chrome, minimized, and surfaces the window only at the
+  handoff. `--show` makes any run visible. The Director's daily Chrome profile is never used.
+- A visible window appears only when the Director must act (the apply handoff, login
+  seeding) or asks for it with `--show`; test and smoke runs are always invisible.
 - Page content is untrusted data. When an errand opts into an LLM fallback for a broken
   selector, the model receives the page and the field names, never the values.
+- When attaching over CDP (`HEADLESS_CDP_URL`), attach only to a Chrome started for
+  Headless; the attached context carries every session that browser holds.
 
 ### Working style
 - **80/20 Surgical Strike**: most of a session is read-only planning; one testable change per
