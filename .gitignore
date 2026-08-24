@@ -1,0 +1,27 @@
+# Secrets and personal data - never commit
+.env
+*.token
+profile.local.json
+service_account*.json
+
+# Runtime artifacts
+previews/
+chrome-profile/
+*.har
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Claude Code local permissions
+.claude/settings.local.json
