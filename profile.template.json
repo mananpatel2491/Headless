@@ -33,7 +33,7 @@
       "city": "Example City",
       "state": "MI",
       "zip": "48000",
-      "build": "single_family",
+      "dwelling_type": "single_family",
       "currently_insured": "yes",
       "policy_doc": "/path/to/current-home-policy.pdf"
     },
@@ -43,7 +43,7 @@
       "city": "Example City",
       "state": "MI",
       "zip": "48000",
-      "build": "single_family",
+      "dwelling_type": "single_family",
       "currently_insured": "yes",
       "policy_doc": "/path/to/current-rental-policy.pdf"
     },
@@ -53,7 +53,7 @@
       "city": "Example City",
       "state": "MI",
       "zip": "48000",
-      "build": "commercial",
+      "dwelling_type": "commercial",
       "currently_insured": "n/a",
       "policy_doc": "n/a"
     }
