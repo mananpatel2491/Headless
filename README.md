@@ -10,7 +10,66 @@ Built on the [Agentic-Vibe-Fleet](https://github.com/mananpatel2491/Agentic-Vibe
 methodology. The constitution is `CLAUDE.md`; the pattern registry is `PATTERNS.md`; the
 architecture map is `Project_Structure.md`.
 
+## First-time setup
+
+Follow this section top to bottom on a machine with nothing Headless-specific installed yet -
+macOS or Windows. It ends with `check_env.py` reporting 5/5 PASS; no other document needs
+consulting along the way.
+
+1. Install Google Chrome (the installed browser is used, not a bundled Chromium).
+2. Install `age`, the local encryption tool the vault (step 5) is built on:
+   ```bash
+   brew install age                              # macOS
+   ```
+   ```bash
+   winget install FiloSottile.age                # Windows (or: scoop install age)
+   ```
+   Optional: [Age Mac](https://github.com/vikiea/age_mac) is a native SwiftUI GUI for `age`
+   vault files on macOS, if a window is preferred over the command line; it opens the same
+   vault file this section creates. It ships ad-hoc signed, so macOS refuses a plain
+   double-click the first time - right-click the app and choose Open instead.
+3. Create the Python environment:
+   ```bash
+   python3 -m venv .venv && source .venv/bin/activate    # macOS
+   pip install -r requirements.txt
+   python -m playwright install chromium
+   ```
+   ```powershell
+   python -m venv .venv; .venv\Scripts\activate          # Windows
+   pip install -r requirements.txt
+   python -m playwright install chromium
+   ```
+   Optionally copy `.env.example` to `.env` for any non-default configuration; every setting
+   below already has a working default.
+4. Activate the commit safety gate (mandatory - see "Public repo hygiene" below):
+   ```bash
+   git config core.hooksPath .githooks
+   ```
+5. Create the vault and seed the `profile` item:
+   ```bash
+   python scripts/vault.py init
+   python scripts/vault.py set profile
+   ```
+   `init` prompts twice (enter, then confirm) for a brand-new passphrase - choose a real one
+   and remember it; there is no way to recover it and no option to save it anywhere. `set
+   profile` prompts once to decrypt, then a hidden prompt for the value itself, then `age`'s
+   own enter/confirm pair to re-encrypt: paste a small, obviously synthetic JSON registry at
+   the hidden prompt, for example:
+   ```json
+   {"identity": {"name": "Test Testerson", "pan": "ABCDE1234F"}, "address": {"home": {"line1": "1 Example Street"}}}
+   ```
+   Never paste a real PAN, address, or any other real identifier here - this is a
+   documentation example, not a template to fill in with real data.
+6. Verify: `python scripts/check_env.py`. Expect 5/5 PASS; the `vault` row names the `age`
+   backend. The Keychain backend remains available but is macOS-only (see "Setup" below);
+   `age` is the cross-platform default for exactly that reason.
+
+Once `check_env.py` passes, continue with "Running an errand" below, starting with seeding a
+site login (`python scripts/probe.py https://<site> --apply`).
+
 ## Setup
+
+Reference for what step 3 above sets up, and for the alternative secrets backends.
 
 1. Install Google Chrome (the installed browser is used, not a bundled Chromium).
 2. Create the environment:
@@ -20,12 +79,15 @@ architecture map is `Project_Structure.md`.
    python -m playwright install chromium
    ```
 3. Copy `.env.example` to `.env`. It holds non-secret configuration only.
-4. Store secrets in the macOS Keychain (default backend):
+4. Secrets live in a local, passphrase-encrypted `age` vault by default - see "First-time
+   setup" above for the full walkthrough (`vault.py init`, `vault.py set`). To use the macOS
+   Keychain instead, set `HEADLESS_SECRETS_BACKEND=keychain` and:
    ```bash
    security add-generic-password -a headless -s <secret-name> -w
    ```
    Set `HEADLESS_SECRETS_BACKEND=gcp` and `HEADLESS_GCP_PROJECT` to use Google Cloud Secret
-   Manager instead (see `terraform/README.md`).
+   Manager instead (see `terraform/README.md`; this plan is superseded by the local vault
+   above, and no cloud resource is created by default).
 5. Activate the commit safety gate (mandatory - see "Public repo hygiene" below):
    ```bash
    git config core.hooksPath .githooks

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-VALID_SECRETS_BACKENDS = ("keychain", "gcp")
+VALID_SECRETS_BACKENDS = ("keychain", "gcp", "age")
 
 
 class ConfigError(RuntimeError):
@@ -29,6 +29,7 @@ class Config:
     secrets_backend: str
     keychain_account: str
     gcp_project: str | None
+    age_file: Path
     preview_dir: Path
     screenshots: bool = True
     show: bool = False
@@ -73,7 +74,12 @@ def load_config(overrides: dict[str, object] | None = None) -> Config:
 
     cdp_url = pick("cdp_url", "HEADLESS_CDP_URL", "") or None
 
-    secrets_backend = pick("secrets_backend", "HEADLESS_SECRETS_BACKEND", "keychain")
+    # "age" is the default (spec 004-age-vault, FR-002): a local
+    # passphrase-encrypted vault, chosen over "keychain" so a fresh clone on
+    # any platform - not only macOS - gets a working backend with zero
+    # configuration (research.md D1). KeychainBackend and GcpBackend are
+    # unchanged and remain selectable.
+    secrets_backend = pick("secrets_backend", "HEADLESS_SECRETS_BACKEND", "age")
     if secrets_backend not in VALID_SECRETS_BACKENDS:
         raise ConfigError(
             f"HEADLESS_SECRETS_BACKEND={secrets_backend!r} must be one of {list(VALID_SECRETS_BACKENDS)}"
@@ -84,6 +90,21 @@ def load_config(overrides: dict[str, object] | None = None) -> Config:
     gcp_project = pick("gcp_project", "HEADLESS_GCP_PROJECT", "") or None
     if secrets_backend == "gcp" and not gcp_project:
         raise ConfigError("HEADLESS_SECRETS_BACKEND=gcp requires HEADLESS_GCP_PROJECT to be set")
+
+    # The vault file has exactly one correct location per machine (D2): a
+    # relative override would resolve differently depending on the current
+    # working directory of whatever process reads it. Stricter than
+    # profile_dir's current handling, this refuses ANY value that is still
+    # relative after ~-expansion, with no literal-default carve-out needed
+    # (the default itself always expands absolute) - mirrors
+    # HEADLESS_PREVIEW_DIR's own out-of-bounds-relative refusal (FR-004).
+    age_file_raw = pick("age_file", "HEADLESS_AGE_FILE", "~/.headless/profile.age")
+    age_file = Path(age_file_raw).expanduser()
+    if not age_file.is_absolute():
+        raise ConfigError(
+            "HEADLESS_AGE_FILE must resolve to an absolute path after "
+            "~-expansion (a relative value would resolve differently depending on cwd)"
+        )
 
     # The default resolves against the repo root, never the process's cwd
     # (FIX-FIRST 6): otherwise `probe.py` run from another directory would
@@ -125,6 +146,7 @@ def load_config(overrides: dict[str, object] | None = None) -> Config:
         secrets_backend=secrets_backend,
         keychain_account=keychain_account,
         gcp_project=gcp_project,
+        age_file=age_file,
         preview_dir=preview_dir,
         screenshots=screenshots,
         show=show,

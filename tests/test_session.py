@@ -68,6 +68,7 @@ def _bare_session() -> Session:
         secrets_backend="keychain",
         keychain_account="unused",
         gcp_project=None,
+        age_file=Path("/tmp/headless-test-unused-vault.age"),
         preview_dir=Path("/tmp/headless-test-unused-previews"),
     )
     session.mode = Mode.PREVIEW
@@ -123,6 +124,7 @@ def _headless_config() -> Config:
         secrets_backend="keychain",
         keychain_account="unused",
         gcp_project=None,
+        age_file=Path("/tmp/headless-test-unused-vault.age"),
         preview_dir=Path("/tmp/headless-test-unused-previews"),
     )
 
@@ -213,6 +215,7 @@ def _config(**overrides) -> Config:
         secrets_backend="keychain",
         keychain_account="unused",
         gcp_project=None,
+        age_file=Path("/tmp/headless-test-unused-vault.age"),
         preview_dir=Path("/tmp/headless-test-unused-previews"),
     )
     return replace(base, **overrides)

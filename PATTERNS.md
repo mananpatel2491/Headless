@@ -239,6 +239,86 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   Verified live on this machine: launching this way starts normally and the resulting page
   reads back a correct title and user agent - passing the option introduces no new failure
   mode here.
+- **Age vault (v0.0.4, spec 004-age-vault).** The Director replaced the planned GCP Secret
+  Manager plus PAM approval backend with a local, open-source, passphrase-encrypted vault
+  built on `age`: `HEADLESS_SECRETS_BACKEND` gains `"age"` and it is now the *default* (was
+  `"keychain"`), so a fresh clone on any platform - not only macOS - gets a working backend
+  with zero configuration (research.md D1). `KeychainBackend` and `GcpBackend` are unchanged
+  and remain selectable; the GCP plan itself is superseded, not deleted (`terraform/README.md`
+  carries the status note). The vault file's path is `Config.age_file`, resolved from
+  `HEADLESS_AGE_FILE`, default `~/.headless/profile.age`; like `preview_dir`'s existing rule,
+  ANY value still relative after `~`-expansion raises `ConfigError` - stricter than
+  `profile_dir`'s current handling, because a misresolved vault path could mean a script
+  decrypts, or worse writes, a file the Director never intended to touch (D2). `.gitignore`
+  gained `*.age` as a second line of defense; the file lives outside the repo by default.
+  The vault's whole decrypted content is one JSON object (`dict[str, str]`, no wrapper, no
+  version field - the same "no speculative structure" reasoning `SessionCookieState` already
+  established in v0.0.3); `get_secret("profile")` keeps returning the registry JSON string
+  unchanged, so `ProfileRegistry` and every existing caller are untouched by this feature
+  (D3). `AgeBackend.get_secret` decrypts **at most once per process**: the first call runs
+  `age -d <vault_file>` (or an injected fake runner, FR-009/NFR-002) with stdout captured
+  entirely in memory, parses it as JSON, and caches the mapping for the rest of the process;
+  every later call, for any name, is served from that cache with zero further runner calls and
+  zero further prompts - this is what makes the passphrase gate liveable (an errand plan
+  touching three registry paths still prompts once, not three times, D4). `age` prompts for
+  the passphrase on the controlling terminal (`/dev/tty`) directly, never on this process's
+  own stdin/stdout, so **no code in `headless/` or `scripts/` ever reads, builds, stores, or
+  logs the passphrase's characters** - this is the entire headline security property the
+  feature is built on, verified empirically before the feature was scoped (a full
+  encrypt-then-decrypt round trip, byte-exact, on this machine's `age` 1.3.1). A failed
+  decrypt (wrong passphrase, corrupted or non-`age` file) raises a value-free `GateRefused`
+  naming only `age`'s exit code plus one fixed hint (`"wrong passphrase, corrupted vault, or no terminal for the passphrase prompt"`)
+  - never any fragment of `age`'s own stderr, on the theory that stderr could in principle
+  echo back something about the file it failed to read, the same reasoning v0.0.3's
+  session-cookie notes already applied to a caught exception's message (FR-012, NFR-004).
+  `AgeBackend.put_secret`/`delete_secret` always raise, directing the caller to
+  `scripts/vault.py`: this is a structural guarantee, not a convention, that an errand can
+  never trigger a surprise decrypt-mutate-re-encrypt prompt chain mid-run (FR-013, D5).
+  `scripts/vault.py` is therefore the *only* place the vault is ever written -
+  `init`/`set NAME`/`unset NAME`/`list`/`path` subcommands, each its own passphrase prompt,
+  nothing cached across invocations (FR-021, matching `AgeBackend`'s own per-process-only
+  cache). Every write follows DECRYPT (skipped for `init`) -> MUTATE (in memory only) ->
+  RE-ENCRYPT (skipped for `list`/`path`): the mutated document's JSON bytes are piped to
+  `age -e -p -a` via the child process's `stdin` (never a temp plaintext file - `age` reads
+  its own passphrase prompt from `/dev/tty`, so `stdin` is completely free for this), the
+  resulting ciphertext is captured from `stdout` and written to a temp file in the vault's own
+  directory, then atomically replaced onto the vault path (`os.replace`) at mode `0600` -
+  reusing `headless/session.py`'s `_export_session_cookies` atomic-write shape from v0.0.3
+  exactly, rather than a second, independently-reviewed implementation of the same job (D6).
+  `set NAME`'s value is read via `getpass.getpass()`, never `argv`, never an environment
+  variable - the one place this feature's own design has *no* residual equivalent to
+  `KeychainBackend.put_secret`'s accepted `-w <value>` argv-exposure window (`PATTERNS.md`'s
+  own FIX-FIRST 13 entry), because `age` offers a `stdin` path `security` does not (SC-008).
+  `chmod 0600` on the temp file is a documented no-op on Windows (no POSIX mode bits there)
+  and is wrapped so it cannot raise (FR-022). `scripts/check_env.py`'s `vault` row, for the
+  `age` backend, checks *only* `shutil.which("age")` and `config.age_file.exists()` - it never
+  calls `open_vault()`/`self_test()` and never decrypts, so `check_env` stays the prompt-free,
+  few-second self-test it has always been; the two failure hints (`brew install age`,
+  `python scripts/vault.py init`) name exactly which piece is missing, something a single
+  collapsed boolean could not (D7, FR-014, FR-015).
+- **Passphrase is the gate (v0.0.4, spec 004-age-vault).** The vault's passphrase prompt *is*
+  the human-approval step the superseded GCP Secret Manager plus PAM plan would have provided
+  from a cloud service - built instead from a property of the encryption tool itself, with no
+  cloud account, no second approver, and no ongoing cost. `errand.py`'s existing pre-resolution
+  loop (every plan source resolved before any browser window opens, in every mode) is
+  unchanged in shape, but now touches `AgeBackend` whenever the default backend is active: any
+  errand whose plan includes a `secret:` or `registry:` source prompts for the passphrase on
+  *every* run, in *every* mode including `preview` and `--check`, not only `--apply` - and
+  therefore needs a real controlling terminal in every one of those modes (FR-024). There is no
+  saved passphrase, no cached unlock, and no flag that suppresses a required prompt: caching of
+  any kind (an environment variable, a keychain item, a file, a CLI flag) was explicitly
+  rejected, since it would defeat the per-run approval gate that is this feature's whole point.
+  `probe.py`'s field plan is empty, so it never touches the vault and never prompts, in any
+  mode - the one carve-out, unchanged from before this feature and proven again against the new
+  default backend. No backend (`age`, Keychain, or GCP) is ever used to store a password or a
+  payment card value - the profile registry holds only the identifiers an errand types into a
+  form (name, address, date of birth, PAN, VIN, licence and policy numbers, and similar); a
+  login persists through the v0.0.3 session-cookie mechanism instead, and any payment action
+  stays human-only per `CLAUDE.md`'s existing "Terminal actions are human-only" rule (FR-023).
+  This is recorded as permanent policy, not a temporary scope boundary: `vault.py set` does not
+  validate or reject a value by shape (there is no passphrase-or-value strength policy of any
+  kind, entirely the Director's own choice), so the safeguard is this stated policy plus the
+  simple fact that every login this tool needs already has a better home than the vault.
 
 ## 2. Coding Standards
 

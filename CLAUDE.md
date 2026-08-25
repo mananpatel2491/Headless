@@ -62,8 +62,20 @@ run repetitive work-portal chores.
 ### Secrets and profile data
 - Secrets and personal profile values (PAN, Aadhaar, passport, card data, passwords) never
   live in the repository, in `.env`, in prompts, in logs, or in preview artifacts.
-- They are fetched at fill-time from the secrets backend: the macOS Keychain by default,
-  GCP Secret Manager when `HEADLESS_SECRETS_BACKEND=gcp` is configured.
+- They are fetched at fill-time from the secrets backend. The default (spec 004-age-vault,
+  Director decision 2026-08-25) is a local, open-source `age` vault: one passphrase-encrypted
+  file (`HEADLESS_AGE_FILE`, default `~/.headless/profile.age`), written only by
+  `scripts/vault.py`. The macOS Keychain and GCP Secret Manager remain selectable via
+  `HEADLESS_SECRETS_BACKEND` but are no longer the default; the GCP Secret Manager plan
+  itself is superseded by the local vault (see `terraform/README.md`).
+- The vault's passphrase is the approval gate: every run that touches a `secret:` or
+  `registry:` field plan source prompts for it, on that run's own controlling terminal, every
+  time - there is no saved passphrase, no cached unlock, and no code path anywhere in
+  `headless/` or `scripts/` that reads, builds, stores, or logs it. `age` itself reads the
+  passphrase from the terminal directly, never from anything Python passes it.
+- No backend - `age`, Keychain, or GCP - ever stores a password or a payment card value. A
+  login persists through the session-cookie mechanism above instead of a stored password, and
+  any payment action stays human-only per the Browser section's terminal-actions rule.
 - A script may type a value into a site only if that value exists in the profile registry.
   Nothing an LLM derives is ever typed. (Same rule as the hand-authored `PROPOSALS` registry
   in the Director's Atlassian toolkit, applied to forms.)

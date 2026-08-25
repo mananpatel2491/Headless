@@ -95,6 +95,7 @@ def fixture_config(tmp_path):
         secrets_backend="keychain",
         keychain_account="headless-test-unused",
         gcp_project=None,
+        age_file=tmp_path / "vault.age",
         preview_dir=tmp_path / "previews",
     )
 
@@ -337,6 +338,7 @@ def test_session_cookie_persists_across_relaunch_on_same_profile(tmp_path, local
         secrets_backend="keychain",
         keychain_account="headless-test-unused",
         gcp_project=None,
+        age_file=tmp_path / "vault.age",
         preview_dir=tmp_path / "previews",
     )
     cookie_url = f"{local_fixture_server}/cookie.html"

@@ -14,6 +14,7 @@ import pytest
 from headless.errand import Errand
 from headless.fields import FieldPlan, parse_source
 from headless.gates import Mode
+from headless.secrets import AgeBackend
 
 RAW_EMAIL_SECRET = "director@example.com"
 RAW_REGISTRY_VALUE = "Director Name"
@@ -110,6 +111,61 @@ def patched_errand_deps(monkeypatch, wired_vault):
     monkeypatch.setattr("headless.errand.Session", FakeSession)
     monkeypatch.setattr("headless.errand.open_vault", lambda config: wired_vault)
     return wired_vault
+
+
+# --- T014, T015 (spec 004-age-vault): AgeBackend wired into pre-resolution --
+
+
+def test_age_backend_prompts_exactly_once_in_preview_mode(tmp_path, monkeypatch):
+    # T014 (FR-024): a registry:-sourced field plan, run in preview mode (no
+    # --apply), triggers exactly one runner call for the new default backend
+    # the same way it already does for FakeVault.
+    vault_file = tmp_path / "vault.age"
+    vault_file.write_text("placeholder-ciphertext", encoding="utf-8")
+    document = {"profile": json.dumps({"identity": {"full_name": RAW_REGISTRY_VALUE}})}
+    calls = []
+
+    def fake_runner(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=json.dumps(document).encode("utf-8"))
+
+    age_vault = AgeBackend(vault_file, runner=fake_runner)
+    monkeypatch.setattr("headless.errand.Session", FakeSession)
+    monkeypatch.setattr("headless.errand.open_vault", lambda config: age_vault)
+
+    def plan_fn(registry):
+        return [
+            FieldPlan(name="Full name", selector="#full_name", source=parse_source("registry:identity.full_name"))
+        ]
+
+    errand = DummyErrand(plan_fn=plan_fn)
+    exit_code = errand.run(["--preview-dir", str(tmp_path / "previews")])
+
+    assert exit_code == 0
+    assert calls == [["age", "-d", str(vault_file)]]
+
+
+@pytest.mark.parametrize("mode_flags", [[], ["--check"], ["--apply"]], ids=["preview", "check", "apply"])
+def test_age_backend_empty_plan_triggers_no_runner_call_in_every_mode(tmp_path, monkeypatch, mode_flags):
+    # T015 (FR-024's probe.py carve-out): an empty plan() must never touch
+    # the vault, in every mode, under the new default backend.
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    vault_file = tmp_path / "vault.age"
+    calls = []
+
+    def fake_runner(argv, **kwargs):
+        calls.append(argv)
+        raise AssertionError("an empty plan must never touch the vault")
+
+    age_vault = AgeBackend(vault_file, runner=fake_runner)
+    monkeypatch.setattr("headless.errand.Session", FakeSession)
+    monkeypatch.setattr("headless.errand.open_vault", lambda config: age_vault)
+
+    errand = DummyErrand(plan_fn=lambda registry: [])
+    exit_code = errand.run([*mode_flags, "--preview-dir", str(tmp_path / "previews")])
+
+    assert exit_code == 0
+    assert calls == []
 
 
 def test_preview_run_produces_masked_record_and_no_fill(patched_errand_deps, tmp_path, capsys):

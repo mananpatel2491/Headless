@@ -6,9 +6,21 @@ when `HEADLESS_SECRETS_BACKEND=gcp`.
 
 ## Status
 
-Not created. Until the `gcloud` SDK is installed on the Director's machine and
-`gcloud auth application-default login` has been run interactively, the default backend is
-the macOS Keychain, which needs no cloud resources.
+Not created, and this plan is now superseded (Director decision 2026-08-25, spec
+004-age-vault): the default secrets backend is a local, open-source, passphrase-encrypted
+`age` vault (`headless/secrets.py`'s `AgeBackend`, written only by `scripts/vault.py`), not
+GCP Secret Manager. Building the GCP plan out would have meant a second Google account
+(Google forbids a principal approving its own Privileged Access Manager grant, so a
+single-Director tool would need someone else to hold the approver role), a standing cloud
+dependency, and a monthly cost for a tool with exactly one user - the local vault gets the
+same per-run approval property (the Director must type the vault's passphrase, at the
+keyboard, every time a secret is needed) from a property of the encryption tool itself, with
+none of that. `GcpBackend`'s code stays in the tree, inert and still selectable via
+`HEADLESS_SECRETS_BACKEND=gcp`, in case a future decision reverses this; no cloud resource is
+created under this plan. The macOS Keychain (`KeychainBackend`) also remains selectable but is
+no longer the default either, for the same reason `age` had to become the default: it is
+macOS-only, and the vault is meant to be set up "on their own machine, macOS or Windows" per
+the Director's own brief.
 
 ## Cost gate (Lesson 5)
 

@@ -25,6 +25,7 @@ Handoff: none; this is not a browser errand.
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 import time
@@ -109,9 +110,32 @@ def _check_git_hooks() -> tuple[str, str]:
     return "PASS", ""
 
 
+def _age_install_hint() -> str:
+    """Platform-appropriate install command for the FAIL hint when `age`
+    itself is missing from PATH (NIT 9, spec 004-age-vault)."""
+    if sys.platform == "darwin":
+        return "brew install age"
+    if sys.platform == "win32":
+        return "winget install FiloSottile.age"
+    return "install age from your package manager"
+
+
 def _check_vault(config: Config) -> tuple[str, str]:
-    """Vault reachable: keychain does put/get/delete of headless-selftest; gcp
-    checks the client is constructible and the project is set."""
+    """Vault reachable: age (the default, spec 004-age-vault) checks only
+    that `age` resolves on PATH and that the vault file exists - it never
+    calls open_vault()/self_test() and never decrypts, so this row names
+    exactly which piece is missing (D7, FR-014, FR-015). On PASS the hint
+    names the active backend (FR-015, US3-AS1: "its vault row naming the
+    age backend"); on FAIL it names the platform-appropriate age install
+    command or the vault.py init command. keychain does put/get/delete of
+    headless-selftest; gcp checks the client is constructible and the
+    project is set."""
+    if config.secrets_backend == "age":
+        if shutil.which("age") is None:
+            return "FAIL", _age_install_hint()
+        if not config.age_file.exists():
+            return "FAIL", "python scripts/vault.py init"
+        return "PASS", "age backend"
     try:
         vault = open_vault(config)
         if vault.self_test():
@@ -123,7 +147,7 @@ def _check_vault(config: Config) -> tuple[str, str]:
 
 def _print_row(name: str, status: str, hint: str) -> None:
     line = f"{name:<12} {status}"
-    if status != "PASS" and hint:
+    if hint:
         line += f" - {hint}"
     print(line)
 
