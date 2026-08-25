@@ -172,6 +172,13 @@ def cmd_set(name: str, config: Config, runner: Callable[..., object]) -> int:
             return 1
         print("value read from stdin (piped)")
     else:
+        print(
+            "Note: this hidden prompt takes SHORT values only - the terminal silently"
+        )
+        print(
+            f"drops pasted input past 1024 characters. For a large value (a full profile),"
+        )
+        print(f"cancel (Ctrl+C) and pipe it instead:  pbpaste | python scripts/vault.py set {name}")
         try:
             value = getpass.getpass(f"Value for {name!r} (hidden, never echoed): ")
         except (KeyboardInterrupt, EOFError):
