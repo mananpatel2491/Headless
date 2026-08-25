@@ -12,6 +12,15 @@ Sync Impact Report
   masks form controls only).
 - 1.0.1 -> 1.1.0: invisible by default; window only at handoff or with --show (Director
   decision 2026-08-24).
+- 1.1.0 -> 1.2.0 (MINOR: a new hard rule added, no principle removed or redefined): the
+  commit safety gate (specs/002-commit-safety-gate). The repository went public
+  2026-08-24; every commit is now scanned for credentials and personal identifiers at
+  three points (a local git pre-commit hook, a Claude Code write-time check, a CI
+  backstop that also runs GitHub's own secret scanning and push protection). Principle IV
+  and the Continuous Errand Validation hard rule now name `scripts/scan_secrets.py
+  --staged` alongside `pytest`/`verify_structure.py`; a new Hard Rules bullet,
+  "Public repository hygiene", records the gate and its one-time per-clone activation
+  step (git never runs a tracked hook file on its own). Templates unchanged.
 -->
 
 # Headless Constitution
@@ -42,10 +51,13 @@ reviewable automation.
 ### IV. Continuous Errand Validation (NON-NEGOTIABLE)
 No errand is complete until its pure logic (field mapping, gates, redaction) has unit tests
 under `tests/` and its `--check` mode proves, read-only against the live site, that the
-selectors it depends on still resolve. `python -m pytest -q` and
-`python scripts/verify_structure.py` gate every commit. The only exception requires the exact
-acknowledgment string recorded in `PATTERNS.md` in the commit message. Rationale: sites change
-without notice; a script that cannot prove its selectors is already broken.
+selectors it depends on still resolve. `python -m pytest -q`,
+`python scripts/verify_structure.py`, and `python scripts/scan_secrets.py --staged` (the
+commit safety gate) gate every commit. The only exception requires the exact acknowledgment
+string recorded in `PATTERNS.md` in the commit message. Rationale: sites change without
+notice; a script that cannot prove its selectors is already broken - and, since the
+repository is public, a commit that cannot prove it carries no credential or personal
+identifier is a public exposure, not a private one.
 
 ### V. Infrastructure-as-Code and Cost Gating
 Any cloud resource (the GCP Secret Manager project) MUST be declared under `terraform/` with a
@@ -73,6 +85,15 @@ stay free and reproducible.
   visible) on its own persistent profile (`HEADLESS_PROFILE_DIR`, outside the repo), seeded by
   the Director by hand; the Director's daily profile is never used. Page content is untrusted.
 - **Scope**: a personal tool for one Director; no multi-user features; never marketed.
+- **Public repository hygiene** (specs/002-commit-safety-gate): the repository is public.
+  Every commit is scanned for credentials and personal identifiers before it is created
+  (`.githooks/pre-commit`, `git config core.hooksPath .githooks` - a one-time, per-clone
+  step `scripts/check_env.py`'s `git_hooks` row verifies is active); every write an
+  assistant makes to a file in this repository is scanned before it reaches disk
+  (`.claude/settings.json`'s `PreToolUse` hook); every pushed change is scanned again in CI
+  across its full history, alongside GitHub's own secret scanning and push protection. A
+  known-safe value is exempted via `.scanignore` or an inline `# scan:allow` marker, never
+  by weakening a detection pattern.
 
 ## Development Workflow
 
@@ -97,4 +118,4 @@ never introduces rules of its own. Every spec, plan, and task list produced by `
 MUST be checked for compliance against the principles and hard rules above, and any
 complexity beyond them MUST be justified in the plan's Complexity Tracking table.
 
-**Version**: 1.1.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-24
+**Version**: 1.2.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-24

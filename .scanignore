@@ -1,0 +1,40 @@
+# Commit safety gate allowlist (specs/002-commit-safety-gate).
+#
+# One entry per line. An exact string suppresses that value wherever it
+# matches. A line starting with "re:" is a regular expression: any value the
+# pattern matches is suppressed. Blank lines and lines starting with "#" are
+# comments, not entries. This suppresses matched VALUES, not whole files or
+# lines: an unrelated occurrence of a different value on the same line, or
+# the same value in a different file, is unaffected.
+#
+# For a one-off exception on a single line, use an inline "# scan:allow"
+# marker on that line instead of adding an entry here.
+#
+# Seeded 2026-08-24 with the repository's own known-safe test fixtures
+# (research.md D3). "Director Name" was removed 2026-08-25 (post-
+# implementation review finding NIT-12): no pattern in this scanner can ever
+# emit a plain two-word name, so it was never a real exception - just an
+# unused line.
+ABCDE1234F
+director@example.com
+super-secret-value-12345
+hunter2-XY
+
+# The three false positives discovered 2026-08-24 during T025's --history
+# self-test (a Spec Kit template hash and a bash int64-max constant, both
+# matched by the old, boundary-less phone_us pattern) and the
+# generic_secret_assignment false positive on headless/fields.py:37 (a
+# comma-and-quote-containing prose match, `, or 'literal:`) were removed
+# 2026-08-25 (post-implementation review findings FIX-FIRST-5/6): each was a
+# pattern-boundary bug, not a genuine exception, so it was fixed at the
+# pattern (a digit-boundary assertion on phone_us; a "no embedded quote or
+# comma" rule on generic_secret_assignment) instead of being allowlisted.
+# See PATTERNS.md's "Commit safety gate" entry for the corrected guidance: a
+# false positive on a non-secret shape is a pattern-boundary bug to fix, not
+# a reason to allowlist; allowlist only genuine synthetic fixtures.
+
+# 2026-08-25: two hex-hash substrings from .specify/integrations/speckit.manifest.json
+# (a 10-digit run and a Luhn-valid 15-digit run, both flanked by letters) briefly
+# needed entries here; fixed at the pattern instead by using alphanumeric boundaries
+# ((?<![0-9A-Za-z]) / (?![0-9A-Za-z])) on phone_us, phone_in and payment_card, since a
+# real phone or card number is never glued to a letter.

@@ -3,12 +3,18 @@
 
 Background: the four things that failed or were missing while bootstrapping
 this machine (D10): no `gcloud`, no CDP listener, Python 3.14 wheel doubt,
-profile-directory policy. Run this after a fresh checkout, a Chrome update,
-or an OS update, before trying a real errand.
+profile-directory policy. A fifth row, `git_hooks`, was added in
+specs/002-commit-safety-gate: `core.hooksPath` is a per-clone git setting, not
+something a tracked file can activate on its own (git never executes a
+tracked `.git/hooks` file), so this row exists to catch a clone where the
+commit safety gate's pre-commit hook is silently inactive. Run this after a
+fresh checkout, a Chrome update, or an OS update, before trying a real
+errand.
 
 Site: none. This maintenance script never opens a browser window and never
 touches a site.
-Reads: the Playwright browser cache, the profile directory, the vault.
+Reads: the Playwright browser cache, the profile directory, the vault, and
+`git config core.hooksPath`.
 Writes (up to): a probe file in the profile directory (removed immediately);
 a `headless-selftest` vault item (removed immediately, keychain backend
 only).
@@ -19,6 +25,7 @@ Handoff: none; this is not a browser errand.
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -32,7 +39,9 @@ if str(REPO_ROOT) not in sys.path:
 from headless.config import Config, ConfigError, load_config
 from headless.secrets import open_vault
 
-ROW_NAMES = ("browser", "playwright", "profile_dir", "vault")
+ROW_NAMES = ("browser", "playwright", "profile_dir", "vault", "git_hooks")
+
+GIT_HOOKS_ACTIVATION_HINT = "run: git config core.hooksPath .githooks"
 
 
 def _check_browser() -> tuple[str, str]:
@@ -74,6 +83,28 @@ def _check_profile_dir(profile_dir: Path) -> tuple[str, str]:
         return "FAIL", f"check permissions on {profile_dir} ({exc})"
 
 
+def _check_git_hooks() -> tuple[str, str]:
+    """core.hooksPath is set to .githooks: the commit safety gate's local
+    pre-commit refusal (specs/002-commit-safety-gate) is active on this
+    clone. git never executes a tracked .git/hooks file for security
+    reasons, so this is a per-clone setting only this row can catch being
+    missed."""
+    try:
+        result = subprocess.run(
+            ["git", "config", "core.hooksPath"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        return "FAIL", "git is not available ({0}); {1}".format(exc, GIT_HOOKS_ACTIVATION_HINT)
+    if result.returncode != 0:
+        return "FAIL", GIT_HOOKS_ACTIVATION_HINT
+    if result.stdout.strip() != ".githooks":
+        return "FAIL", GIT_HOOKS_ACTIVATION_HINT
+    return "PASS", ""
+
+
 def _check_vault(config: Config) -> tuple[str, str]:
     """Vault reachable: keychain does put/get/delete of headless-selftest; gcp
     checks the client is constructible and the project is set."""
@@ -110,7 +141,9 @@ def main(argv: list[str] | None = None) -> int:
         # Config errors (e.g. HEADLESS_SECRETS_BACKEND=gcp without
         # HEADLESS_GCP_PROJECT) must fail before any other check runs and
         # before any browser launch (FR-004, SC-006: under 2 seconds).
-        for name in ROW_NAMES[:-1]:
+        for name in ROW_NAMES:
+            if name == "vault":
+                continue
             _print_row(name, "SKIP", "skipped: configuration error, see vault row")
         _print_row("vault", "FAIL", str(exc))
         return 1
@@ -120,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         ("playwright", *_check_playwright()),
         ("profile_dir", *_check_profile_dir(config.profile_dir)),
         ("vault", *_check_vault(config)),
+        ("git_hooks", *_check_git_hooks()),
     ]
     for name, status, hint in rows:
         _print_row(name, status, hint)

@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/scripts/scan_secrets.py\" --stdin-hook || exit 0",
+            "timeout": 10,
+            "statusMessage": "Scanning for credentials and personal identifiers"
+          }
+        ]
+      }
+    ]
+  }
+}

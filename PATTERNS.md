@@ -125,6 +125,61 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   and closing it immediately; this does not violate "check_env opens no window" because
   no visible window is created (the headed/headless distinction used throughout this
   repo is about visibility, not process existence).
+- **Commit safety gate (v0.0.2).** The repository went public 2026-08-24. One scanner,
+  `scripts/scan_secrets.py`, is a direct instance of the **Cross-Platform Automation**
+  pattern below: standard-library-only Python, `argparse`, so every enforcement layer
+  works on a fresh clone with no install step beyond what the project already needs -
+  it runs identically under the project's `.venv` and under the macOS system `python3`
+  (verified 3.9.6 on this machine), since `.githooks/pre-commit` cannot assume a
+  virtualenv is active. Four mutually exclusive modes (`--staged`, `--paths`, `--history`,
+  `--stdin-hook`) share one pattern table, one masking function
+  (`redact(value) = "****" + value[-2:]`, identical to `headless/preview.py`'s
+  convention), and one `.scanignore` allowlist (exact string or `re:` entry, plus an
+  inline `# scan:allow` marker for a single line) so a pattern is added once and every
+  layer inherits it. `scan_secrets.py` deliberately does not import `headless.config`
+  (which pulls in `python-dotenv`, a non-stdlib dependency) - importing it would break
+  the zero-install guarantee the pre-commit hook and the Claude Code hook both depend on
+  before `pip install` has ever run on a fresh clone. `--history` scans every blob
+  reachable from `HEAD` exactly once (deduped by blob sha via `git rev-list --objects`
+  piped into one `git cat-file --batch` call, two subprocess calls total regardless of
+  history size) rather than once per commit, so it stays well under its 2-second budget
+  even though it walks the whole reachable history, not just the working tree. The
+  `--stdin-hook` mode's deny/allow signaling mirrors `~/.claude/hooks/no-em-dash.py`
+  exactly (JSON `hookSpecificOutput`/`permissionDecision` on stdout, always exit `0`,
+  fail-open on any input it cannot parse) rather than an exit-code convention, matching
+  the one other `PreToolUse` hook already solving the same kind of problem in this
+  environment; both hooks are registered on the same `Write|Edit|MultiEdit|NotebookEdit`
+  matcher and run independently, either one denying is enough. `.githooks/pre-commit`
+  locates the repository root via `git rev-parse --show-toplevel` (so it works when
+  invoked from any subdirectory) and runs the system `python3`, never the venv, since a
+  git hook's environment does not activate one; `core.hooksPath` is a per-clone git
+  setting a tracked file cannot turn on by itself (git never executes a tracked
+  `.git/hooks` file), so `scripts/check_env.py` gained a fifth row, `git_hooks`, to catch
+  a clone where this was missed. **Empirically discovered false positives (v0.0.2, this
+  machine, 2026-08-24), corrected 2026-08-25**: the first real `--history` run against this
+  repository's own pre-existing v0.0.1 history found four legitimate, non-secret matches the
+  `phone_us` and `generic_secret_assignment` patterns fired on (a Spec Kit template file's
+  SHA-256 hash, a bash `int64`-max constant appearing twice, and a Python f-string that quotes
+  two `Source` prefix kinds back to back in a way that reads like a keyword-colon-quote
+  assignment). These were first handled by adding each as its own exact-string entry to
+  `.scanignore` rather than weakening either pattern - and a same-day guidance sentence here told
+  a future session to do the same for the next large integer or hex/base64 hash it hit. A
+  post-implementation review the next day (2026-08-25) found that guidance backwards: each of the
+  four was a genuine **pattern-boundary bug** - `phone_us` and `generic_secret_assignment` had no
+  digit-adjacency or embedded-delimiter guard, so a shape-only match inside an unrelated large
+  number or a piece of prose could fire - not a property of large integers or hashes in general.
+  Both were fixed at the pattern instead: `phone_us` (and `phone_in`, `payment_card`) gained a
+  `(?<![0-9A-Za-z])`/`(?![0-9A-Za-z])` alphanumeric-boundary assertion so a window inside a longer digit run can no
+  longer match at all, `aadhaar_in` and `iban` gained a checksum (Verhoeff, mod-97) the same way
+  `payment_card` already had Luhn, and `generic_secret_assignment` was tightened so its captured
+  value can never contain an embedded quote or comma, closing the two-adjacent-quoted-strings
+  shape that produced the fourth false positive. All four `.scanignore` entries for these were
+  then removed as no longer needed (proven by `--history` on this repository's own real history
+  still exiting `0` - D10). **Corrected guidance**: a false positive on a non-secret shape is a
+  pattern-boundary bug, not a fact about the world to work around; fix the pattern with a boundary
+  assertion or a checksum, and allowlist only genuine synthetic fixtures (a value that really is
+  secret- or PII-shaped and exists on purpose, such as this feature's own test fixtures) - never a
+  value that merely happens to collide with an under-specified pattern.
 
 ## 2. Coding Standards
 
@@ -135,7 +190,7 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   is unit-tested without a browser. Browser paths are exercised by `--check`.
 
 ## 3. Tooling Conventions
-
+  **Accepted residuals (2026-08-25, second review)**: (1) the snippet cap bounds output size only; text on the same line that no pattern matched (for example a 40-character AWS secret access key beside a detected token) is printed when it sits within the 200-character window, so review `--staged` output before pushing and rely on gitleaks in CI for keyword-context secrets. (2) `vendor/`, `node_modules/`, `site-packages/`, lockfiles, `*.min.js`, `*.map`, `*.svg` are skipped in every mode by design (performance and noise); gitleaks in CI is the only cover there. (3) `payment_card` requires a known issuer prefix (Visa, Mastercard, Amex, Discover, JCB, Diners) on top of Luhn, so a coincidentally Luhn-valid port or id list is not a finding; a card from an unlisted network would be missed.
 - **Commit gate**: `python -m pytest -q` and `python scripts/verify_structure.py` both pass.
   Exception string (must appear verbatim in the commit message):
   `I understand the Headless validation gate is failing and I allow the exception to have the code committed to the repo`.

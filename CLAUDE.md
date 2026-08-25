@@ -34,9 +34,13 @@ run repetitive work-portal chores.
 4. **Continuous Errand Validation** (replaces AVF's Bruno API gate; Headless has no API).
    No errand is complete until (a) its pure logic (field mapping, gates, redaction) has unit
    tests under `tests/` and (b) `python scripts/<errand>.py --check` proves, read-only against
-   the live site, that the selectors it depends on still resolve. `pytest` and
-   `verify_structure.py` gate every commit. The only exception requires the exact string
-   recorded in `PATTERNS.md` in the commit message.
+   the live site, that the selectors it depends on still resolve. `pytest`,
+   `verify_structure.py`, and `python scripts/scan_secrets.py --staged` (the commit safety
+   gate, specs/002-commit-safety-gate) gate every commit. `.githooks` activation
+   (`git config core.hooksPath .githooks`) is mandatory on every clone or worktree: git never
+   runs a tracked hook file on its own, so this one-time step is what actually turns the gate
+   on; `scripts/check_env.py`'s `git_hooks` row reports whether it is active. The only
+   exception requires the exact string recorded in `PATTERNS.md` in the commit message.
 5. **Infrastructure-as-Code and Cost Gating**. Any cloud resource (the GCP Secret Manager
    project) is declared under `terraform/` with a projected monthly cost before it is created.
    Target: $0/month. No cloud resource is created from the console or an ad-hoc CLI call.

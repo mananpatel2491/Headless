@@ -10,7 +10,8 @@ from cron or CI.
 | Script | Description |
 | :--- | :--- |
 | `verify_structure.py` | Fails (exit 1) when a file on disk is missing from the `Project_Structure.md` Changelog. Part of the commit gate. `--dry-run` prints a read-only notice. |
-| `check_env.py` | Environment self-test: Chrome (`chrome` channel), Playwright runtime + browser cache, profile directory, secrets vault. Prints PASS/FAIL/SKIP per row; opens no browser window. Not a browser errand; the errand contract below does not apply (no preview/apply/check modes, no `HANDOFF`). Usage: `python scripts/check_env.py`. |
+| `check_env.py` | Environment self-test: Chrome (`chrome` channel), Playwright runtime + browser cache, profile directory, secrets vault, and (specs/002-commit-safety-gate) `core.hooksPath` activation. Prints PASS/FAIL/SKIP per row; opens no browser window. Not a browser errand; the errand contract below does not apply (no preview/apply/check modes, no `HANDOFF`). Usage: `python scripts/check_env.py`. |
+| `scan_secrets.py` | Commit safety gate (specs/002-commit-safety-gate): credential and personal-identifier scanner, standard library only, runs under the macOS system `python3` as well as the project's `.venv`. Not a browser errand; never opens a browser or writes anything. Four mutually exclusive modes: `--staged` (added lines of `git diff --cached`, used by `.githooks/pre-commit`), `--paths FILE [FILE ...]` (complete content of named files), `--history` (every blob reachable from `HEAD`, used by the CI backstop), `--stdin-hook` (reads a Claude Code `PreToolUse` payload from stdin, used by `.claude/settings.json`). Exit `0` clean / `1` findings / `2` usage error in the first three modes; `--stdin-hook` always exits `0` and communicates a deny through its own JSON output (fail-open on anything it cannot parse). See `contracts/cli-and-hooks.md` for the full contract and `.scanignore` for the allowlist grammar. |
 
 ## Errands
 
