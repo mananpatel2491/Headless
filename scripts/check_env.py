@@ -50,11 +50,15 @@ def _check_browser() -> tuple[str, str]:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(channel="chrome", headless=True)
+            browser = p.chromium.launch(channel="chrome", headless=True, chromium_sandbox=True)
             browser.close()
         return "PASS", ""
     except Exception as exc:
-        return "FAIL", f"install Google Chrome, or confirm the 'chrome' channel resolves ({exc})"
+        return (
+            "FAIL",
+            "install Google Chrome, or confirm the 'chrome' channel resolves, "
+            f"or the Chrome sandbox cannot start on this host ({exc})",
+        )
 
 
 def _check_playwright() -> tuple[str, str]:

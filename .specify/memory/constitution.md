@@ -21,6 +21,17 @@ Sync Impact Report
   --staged` alongside `pytest`/`verify_structure.py`; a new Hard Rules bullet,
   "Public repository hygiene", records the gate and its one-time per-clone activation
   step (git never runs a tracked hook file on its own). Templates unchanged.
+- 1.2.0 -> 1.2.1 (PATCH: wording only, no principle or hard rule added, removed, or
+  redefined): login persistence (specs/003-login-persistence). A seeded login now
+  survives to the next run: on the launched-profile path only, the profile directory
+  also holds a plaintext session-cookie state file (`session-cookies.json`), and every
+  Chrome launch in the codebase now passes the sandbox-on launch option. The Secrets and
+  Browser Hard Rules bullets each gain one sentence naming this file and its vault-grade
+  classification and recording that the CDP-attach path never touches it; this extends
+  the reach of the existing "secrets never live in ... previews or logs" and "the
+  Director's daily Chrome profile is never used" rules to one more file inside a
+  directory those rules already govern, rather than stating a new rule. Templates
+  unchanged.
 -->
 
 # Headless Constitution
@@ -77,13 +88,18 @@ stay free and reproducible.
   backend (macOS Keychain by default, GCP Secret Manager when configured). The JSON preview
   record is redacted at construction; the screenshot masks form controls but may show
   page-rendered data, so `previews/` is vault-grade local data (gitignored, never shared,
-  `--no-screenshot` available).
+  `--no-screenshot` available). The profile directory's own session-cookie file
+  (`session-cookies.json`, launched-profile path only) inherits this same vault-grade
+  classification; a cookie name or value never appears in a note, an exception message, or
+  any preview artifact.
 - **Registry is the only writable source**: a script may type a value only if it exists in the
   profile registry. LLM-derived values are structurally unwritable.
 - **Browser**: invisible by default (preview/check run Chrome's headless mode; apply opens a
   real windowed Chrome, minimized, surfaced only at the handoff, with `--show` making any run
   visible) on its own persistent profile (`HEADLESS_PROFILE_DIR`, outside the repo), seeded by
   the Director by hand; the Director's daily profile is never used. Page content is untrusted.
+  The profile directory also holds a plaintext session-cookie file that lets a seeded login
+  persist across runs; the CDP-attach path never reads or writes it.
 - **Scope**: a personal tool for one Director; no multi-user features; never marketed.
 - **Public repository hygiene** (specs/002-commit-safety-gate): the repository is public.
   Every commit is scanned for credentials and personal identifiers before it is created
@@ -118,4 +134,4 @@ never introduces rules of its own. Every spec, plan, and task list produced by `
 MUST be checked for compliance against the principles and hard rules above, and any
 complexity beyond them MUST be justified in the plan's Complexity Tracking table.
 
-**Version**: 1.2.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-24
+**Version**: 1.2.1 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-25

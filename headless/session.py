@@ -36,10 +36,26 @@ why `previews/` is still vault-grade local data. If the page's own
 Content-Security-Policy blocks the mask's `<style>` injection,
 `screenshot()` never falls back to capturing unmasked: it returns `None`
 (JSON-only artifact, the same as `--no-screenshot`) and prints one note.
+
+Session cookie persistence (v0.0.3, spec 003-login-persistence): Chrome drops
+any cookie with no expiry (a session cookie - what most logins actually set)
+on every `launch_persistent_context` restart, even though a cookie with an
+expiry survives on its own. On the launched-profile path only,
+`__enter__` imports `<profile_dir>/session-cookies.json` (if present) into
+the fresh context before any navigation, and `__exit__` exports the
+context's current session-only cookies to that file before closing. The
+CDP-attach path never reads or writes this file (D1, FR-012). See
+specs/003-login-persistence/data-model.md and contracts/session-state.md.
+Every Chrome process this codebase launches also passes
+`chromium_sandbox=True` (D7): Playwright adds `--no-sandbox` to every launch
+unless this exact option is passed, which is what produced the "unsupported
+command-line flag" warning bar the Director saw at the apply handoff.
 """
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
 from playwright.sync_api import Error as PlaywrightError
@@ -89,6 +105,85 @@ _OFFSCREEN_LEFT = 32000
 _OFFSCREEN_TOP = 32000
 _RESTORE_LEFT = 100
 _RESTORE_TOP = 100
+
+# Session cookie persistence (v0.0.3, spec 003-login-persistence). The state
+# file's location is derived from the profile directory already in use, not
+# configured (FR-002, D2). See specs/003-login-persistence/data-model.md for
+# the file's exact shape and invariants.
+SESSION_COOKIE_FILENAME = "session-cookies.json"
+
+
+def _session_cookie_path(profile_dir: Path) -> Path:
+    """Where the launched-profile path's session-cookie state file lives for
+    a given profile directory. See specs/003-login-persistence/data-model.md."""
+    return Path(profile_dir) / SESSION_COOKIE_FILENAME
+
+
+def _import_session_cookies(context, profile_dir: Path) -> bool:
+    """Restore previously exported session cookies into a freshly launched
+    context, before any navigation (D3). A missing state file is the
+    expected shape of a fresh or never-seeded profile and prints nothing
+    (FR-006). Every other failure - unreadable, malformed, empty, or
+    `context.add_cookies()` itself rejecting the whole call - collapses to
+    exactly one note naming only the exception's class, never its message
+    (which could quote back a fragment of the untrusted file content) and
+    never the file's contents (D4, FR-007, FR-008, FR-010). The run always
+    proceeds with a usable context, imported or not.
+
+    Returns True when there was nothing to import (no file) or the import
+    succeeded, and False only when a file existed but the import failed.
+    The caller uses this to decide whether `__exit__` may export at all: a
+    failed import must never let the unconditional export that follows
+    overwrite a good, previously exported file with an empty one (verifier
+    FIX-FIRST 1, 2026-08-25).
+    """
+    path = _session_cookie_path(profile_dir)
+    if not path.exists():
+        return True
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            entries = json.load(f)
+        if not isinstance(entries, list):
+            raise ValueError("session cookie state file is not a JSON array")
+        context.add_cookies(entries)
+        return True
+    except Exception as exc:
+        print(f"note: session cookies not restored ({type(exc).__name__})")
+        return False
+
+
+def _export_session_cookies(context, profile_dir: Path) -> None:
+    """Export the context's current session-only cookies (`expires == -1`;
+    Chrome's own persistent profile already keeps anything with a real
+    expiry, D3) before the context closes. Every export replaces the state
+    file's entire previous content (D3/D4 self-healing: a cookie the site
+    has since cleared is simply absent from the new file) via a temp file in
+    the same directory plus an atomic `os.replace`, and always leaves the
+    file at mode `0600` (FR-005). Never retries on failure (NFR-002): a
+    write problem collapses to exactly one note and the caller still
+    proceeds to close the context (D4, FR-009).
+    """
+    profile_dir = Path(profile_dir)
+    target = _session_cookie_path(profile_dir)
+    tmp_path = profile_dir / f"{SESSION_COOKIE_FILENAME}.tmp"
+    try:
+        cookies = context.cookies()
+        session_only = [c for c in cookies if c.get("expires") == -1]
+        fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(session_only, f)
+        os.chmod(str(tmp_path), 0o600)
+        os.replace(str(tmp_path), str(target))
+    except Exception as exc:
+        # Best-effort cleanup: a failure anywhere between the temp write and
+        # the atomic replace must never leave a plaintext-cookie temp file
+        # behind (verifier FIX-FIRST 2, 2026-08-25). This cleanup itself can
+        # never raise: a second failure here still must not break the run.
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        print(f"note: session cookies not saved ({type(exc).__name__})")
 
 
 def _effective_headed(mode: Mode, config: Config) -> bool:
@@ -157,6 +252,12 @@ class Session:
         self.page = None
         self._quiet_cdp = None  # set only for a hidden (quiet-apply) launched window
         self._quiet_window_id: int | None = None
+        # Default True: no import has failed (yet). Only a launched-profile
+        # run whose import actually found a file and failed to restore it
+        # sets this False, in which case __exit__ must skip the export
+        # entirely rather than overwrite a good file with an empty one
+        # (verifier FIX-FIRST 1, 2026-08-25).
+        self._cookie_import_ok = True
 
     def __enter__(self) -> "Session":
         self._playwright = sync_playwright().start()
@@ -180,8 +281,10 @@ class Session:
                     str(self.config.profile_dir),
                     channel="chrome",
                     headless=headless_flag,
+                    chromium_sandbox=True,
                 )
                 self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+                self._cookie_import_ok = _import_session_cookies(self.context, self.config.profile_dir)
                 if _should_hide_window(self.mode, self.config):
                     self._hide_window()
         except PlaywrightError as exc:
@@ -216,6 +319,13 @@ class Session:
                     self._browser.close()
             else:
                 if self.context is not None:
+                    # A failed import (a state file existed but could not be
+                    # restored) must never let this unconditional export
+                    # overwrite that still-good file with an empty one - skip
+                    # the export in that case only; the context still closes
+                    # normally either way (verifier FIX-FIRST 1, 2026-08-25).
+                    if self._cookie_import_ok:
+                        _export_session_cookies(self.context, self.config.profile_dir)
                     self.context.close()
         finally:
             if self._playwright is not None:

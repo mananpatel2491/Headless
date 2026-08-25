@@ -180,6 +180,65 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   assertion or a checksum, and allowlist only genuine synthetic fixtures (a value that really is
   secret- or PII-shaped and exists on purpose, such as this feature's own test fixtures) - never a
   value that merely happens to collide with an under-specified pattern.
+- **Session cookie persistence (v0.0.3, UAT of v0.0.1 2026-08-25).** A login that does not
+  survive between runs defeats the point of the persistent Chrome profile: Chrome drops any
+  cookie carrying no expiry (a session cookie - what most logins actually set) on every
+  `launch_persistent_context` restart, even though a cookie that already carries an expiry
+  survives on its own (verified empirically before this feature was scoped; the Headless
+  profile, `~/.headless/chrome-profile/Default/Cookies`, held 18 persistent tracking cookies
+  for `.progressive.com` and zero cookies for any account host after the UAT run). Also
+  verified and recorded as a negative result (2026-08-25, this machine): seeding Chrome's own
+  `session.restore_on_startup = 1` ("continue where you left off") preference into
+  `Default/Preferences` before the first launch does **not** keep session cookies across a
+  `launch_persistent_context` restart under Playwright - the preference itself survives, but
+  the session cookies are still dropped the same as without it. This is why persistence needed
+  its own export/import mechanism rather than relying on that Chrome preference. Persistence
+  lives entirely in
+  `headless/session.py`, on the launched-profile path only (D1) - the CDP-attach path
+  (`HEADLESS_CDP_URL` set) neither reads nor writes anything this feature adds, because that
+  browser's session cookies are the Director's own Chrome's problem to keep or drop, not
+  Headless's. The state file's location is derived, never configured (D2):
+  `<profile_dir>/session-cookies.json`, no new environment variable, no new CLI flag.
+  **Import** happens in `Session.__enter__`, immediately after `self.page = ...` and before
+  any navigation: if the file exists, parse it and call `context.add_cookies(entries)` once.
+  **Export** happens in `Session.__exit__`, immediately before `self.context.close()`: read
+  `context.cookies()`, keep only the entries with `expires == -1` (Chrome's own persistent
+  profile already keeps anything with a real expiry), and replace the file's entire previous
+  content via a temp file in the same directory plus an atomic `os.replace`, always leaving
+  it at mode `0600` (D3). Every failure mode collapses to the same fail-soft shape (D4): a
+  **missing** file is the expected shape of a fresh or never-seeded profile and prints
+  nothing; an unreadable, malformed, or empty file, or `context.add_cookies()` itself
+  rejecting the whole call, is caught and produces exactly one note -
+  `note: session cookies not restored (<ExceptionClassName>)` on import,
+  `note: session cookies not saved (<ExceptionClassName>)` on export - naming only the
+  caught exception's class, never its message (a parse error on untrusted JSON can quote
+  back a fragment of what it failed to parse) and never a cookie name or value. Export runs
+  on every clean close, in every mode (preview, check, apply), not apply only, so a read-only
+  run that happens to observe a refreshed session cookie keeps the state file current too.
+  Two residuals are accepted, not solved by this feature: a site's bot defense that logs the
+  profile out server-side because the headless preview/check user agent still identifies as
+  `HeadlessChrome` on this machine (this file's own "Quiet by default" entry) causes that
+  run's export to faithfully write whatever session cookies remain, which may be none -
+  recovery is the same `--apply` seed the Director already knows; and a login that lives in
+  `sessionStorage` rather than a cookie (the India ITR e-filing portal's JWT is the known
+  example in this repository's own `MEMORY.md`) is not persisted at all, since
+  `context.cookies()` has no visibility into `sessionStorage`. See
+  `specs/003-login-persistence/` for the full research and contracts.
+- **Chrome sandbox on (v0.0.3).** The apply window showed Chrome's own "unsupported
+  command-line flag: --no-sandbox" warning bar at the handoff - the one window the Director
+  actually watches. Root cause, verified by reading Playwright's own driver bundle
+  (`coreBundle.js`, line 43075): `if (options.chromiumSandbox !== true) chromeArguments.push
+  ("--no-sandbox")` - Playwright adds `--no-sandbox` to every Chromium launch unless
+  `chromium_sandbox=True` is passed explicitly; there is no other flag involved. The fix is
+  that exact option, passed on every Chrome launch in the codebase: `headless/session.py`'s
+  `launch_persistent_context` call (the launched-profile path) and
+  `scripts/check_env.py`'s `_check_browser()` probe (`chromium.launch`), the latter included
+  even though the Director never sees that launch, for the same consistency reason this
+  file's own "check_env's 'browser' row launches, briefly, headless" entry already gives for
+  that probe existing at all. No flag exists, or may be added, to turn the sandbox back off.
+  Verified live on this machine: launching this way starts normally and the resulting page
+  reads back a correct title and user agent - passing the option introduces no new failure
+  mode here.
 
 ## 2. Coding Standards
 
