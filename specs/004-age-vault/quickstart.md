@@ -51,9 +51,9 @@ On success, `vault.py` prints the resolved path (for example `~/.headless/profil
 python scripts/vault.py set profile
 ```
 
-Expected: one passphrase prompt (decrypt), then `age`'s own enter/confirm pair (re-encrypt), then
-a hidden `getpass` prompt for the value itself. Paste a small, obviously synthetic registry as one
-line, for example:
+Expected: one passphrase prompt (decrypt), then a hidden `getpass` prompt for the value itself,
+then `age`'s own enter/confirm pair (re-encrypt). Paste a small, obviously synthetic registry at
+the hidden prompt, as one line, for example:
 
 ```json
 {"identity": {"name": "Test Testerson", "pan": "ABCDE1234F"}, "address": {"home": {"line1": "1 Example Street"}}}
@@ -112,7 +112,7 @@ FR-024) - not only `--apply`.
 Repeat Scenario 5's snippet, but type the wrong passphrase at the prompt.
 
 Expected: the run refuses with a value-free error naming only `age`'s exit code and the fixed
-hint `wrong passphrase or corrupted vault` - never `age`'s own stderr text, never any byte of the
+hint `wrong passphrase, corrupted vault, or no terminal for the passphrase prompt` - never `age`'s own stderr text, never any byte of the
 vault's content.
 
 ## Scenario 7: unit-level proof, zero prompts (SC-001, SC-002, SC-005, SC-007, SC-008)

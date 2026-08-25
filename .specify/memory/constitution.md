@@ -32,6 +32,16 @@ Sync Impact Report
   Director's daily Chrome profile is never used" rules to one more file inside a
   directory those rules already govern, rather than stating a new rule. Templates
   unchanged.
+- 1.2.1 -> 1.3.0 (MINOR: the default secrets backend changed, and one new explicit hard
+  rule is added - not a wording-only PATCH, unlike 1.2.1's own bump): the local age vault
+  (specs/004-age-vault). The Director replaced the planned GCP Secret Manager plus PAM
+  approval backend with a local, open-source, passphrase-encrypted vault (`age`); the
+  default value of `HEADLESS_SECRETS_BACKEND` changes from `keychain` to `age` (both
+  `KeychainBackend` and `GcpBackend` remain in place and selectable, unmodified). The
+  Secrets Hard Rules bullet is rewritten to name the vault, its per-run passphrase gate
+  (no caching of any kind - the passphrase never enters Python), and a new explicit rule:
+  no backend ever stores a password or a payment card value. `terraform/README.md`
+  records the GCP Secret Manager plan as superseded, not deleted. Templates unchanged.
 -->
 
 # Headless Constitution
@@ -85,13 +95,19 @@ stay free and reproducible.
   added. At the handoff the window stays open and the script prints "Your turn".
 - **Secrets and profile data** (PAN, Aadhaar, passport, card data, passwords) never live in
   the repo, `.env`, prompts, logs, or previews. They are fetched at fill-time from the secrets
-  backend (macOS Keychain by default, GCP Secret Manager when configured). The JSON preview
-  record is redacted at construction; the screenshot masks form controls but may show
-  page-rendered data, so `previews/` is vault-grade local data (gitignored, never shared,
-  `--no-screenshot` available). The profile directory's own session-cookie file
-  (`session-cookies.json`, launched-profile path only) inherits this same vault-grade
-  classification; a cookie name or value never appears in a note, an exception message, or
-  any preview artifact.
+  backend: a local, passphrase-encrypted `age` vault by default (specs/004-age-vault;
+  `HEADLESS_AGE_FILE`, default `~/.headless/profile.age`, written only by `scripts/vault.py`),
+  the macOS Keychain, or GCP Secret Manager when explicitly selected. The vault's passphrase
+  is the approval gate: every run touching a `secret:`/`registry:` field plan source prompts
+  for it on that run's own controlling terminal, every time - no caching of any kind, and no
+  code path in `headless/` or `scripts/` ever reads, stores, or logs it. No backend ever
+  stores a password or a payment card value; a login persists through the session-cookie
+  mechanism below instead. The JSON preview record is redacted at construction; the
+  screenshot masks form controls but may show page-rendered data, so `previews/` is
+  vault-grade local data (gitignored, never shared, `--no-screenshot` available). The profile
+  directory's own session-cookie file (`session-cookies.json`, launched-profile path only)
+  inherits this same vault-grade classification; a cookie name or value never appears in a
+  note, an exception message, or any preview artifact.
 - **Registry is the only writable source**: a script may type a value only if it exists in the
   profile registry. LLM-derived values are structurally unwritable.
 - **Browser**: invisible by default (preview/check run Chrome's headless mode; apply opens a
@@ -134,4 +150,4 @@ never introduces rules of its own. Every spec, plan, and task list produced by `
 MUST be checked for compliance against the principles and hard rules above, and any
 complexity beyond them MUST be justified in the plan's Complexity Tracking table.
 
-**Version**: 1.2.1 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-25
+**Version**: 1.3.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-25

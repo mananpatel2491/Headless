@@ -20,6 +20,7 @@ ALL_HEADLESS_VARS = [
     "HEADLESS_SECRETS_BACKEND",
     "HEADLESS_KEYCHAIN_ACCOUNT",
     "HEADLESS_GCP_PROJECT",
+    "HEADLESS_AGE_FILE",
     "HEADLESS_PREVIEW_DIR",
     "HEADLESS_SCREENSHOTS",
     "HEADLESS_SHOW",
@@ -38,13 +39,58 @@ def test_defaults():
     assert config.profile_dir == Path("~/.headless/chrome-profile").expanduser()
     assert config.headed is True
     assert config.cdp_url is None
-    assert config.secrets_backend == "keychain"
+    # spec 004-age-vault, FR-002: "age" is the default (was "keychain").
+    assert config.secrets_backend == "age"
     assert config.keychain_account == "headless"
     assert config.gcp_project is None
+    assert config.age_file == Path("~/.headless/profile.age").expanduser()
     # FIX-FIRST 6: the default resolves against the repo root, not cwd.
     assert config.preview_dir == REPO_ROOT / "previews"
     assert config.screenshots is True
     assert config.show is False
+
+
+# --- T010, T011 (spec 004-age-vault): default backend + age_file resolution
+
+
+def test_default_secrets_backend_is_age(monkeypatch):
+    # SC-003: load_config() with HEADLESS_SECRETS_BACKEND unset (and no
+    # override) resolves secrets_backend == "age".
+    config = load_config()
+    assert config.secrets_backend == "age"
+
+
+def test_age_file_default_is_tilde_expanded():
+    config = load_config()
+    assert config.age_file == Path.home() / ".headless" / "profile.age"
+    assert "~" not in str(config.age_file)
+
+
+def test_age_file_absolute_override_is_used_as_is():
+    config = load_config(overrides={"age_file": "/tmp/headless-vault-test.age"})
+    assert config.age_file == Path("/tmp/headless-vault-test.age")
+
+
+def test_age_file_absolute_env_override_is_used_as_is(monkeypatch, tmp_path):
+    monkeypatch.setenv("HEADLESS_AGE_FILE", str(tmp_path / "vault.age"))
+    config = load_config()
+    assert config.age_file == tmp_path / "vault.age"
+
+
+def test_age_file_relative_override_raises(monkeypatch):
+    # research.md D2: mirrors HEADLESS_PREVIEW_DIR's own relative-path
+    # refusal, but with no literal-default carve-out (the default itself
+    # always expands absolute).
+    with pytest.raises(ConfigError) as exc_info:
+        load_config(overrides={"age_file": "myvault.age"})
+    assert "HEADLESS_AGE_FILE" in str(exc_info.value)
+
+
+def test_age_file_relative_env_override_raises(monkeypatch):
+    monkeypatch.setenv("HEADLESS_AGE_FILE", "myvault.age")
+    with pytest.raises(ConfigError) as exc_info:
+        load_config()
+    assert "HEADLESS_AGE_FILE" in str(exc_info.value)
 
 
 def test_tilde_expansion_from_env(monkeypatch):

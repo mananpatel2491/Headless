@@ -12,8 +12,19 @@ and what is open.
 - Machine: macOS, Python 3.14, Playwright 1.62, Google Chrome 151 installed. Headless launches
   the installed Chrome (`channel="chrome"`), headed, on its own persistent profile at
   `~/.headless/chrome-profile`.
-- Secrets backend: macOS Keychain (`security` CLI, account `headless`). GCP Secret Manager is
-  code-ready but inactive: `gcloud` is not installed on this machine yet.
+- Secrets backend: as of v0.0.4 (2026-08-25, spec 004-age-vault), the default backend is a
+  local, open-source, passphrase-encrypted `age` vault (`~/.headless/profile.age`), replacing
+  the earlier plan to default to GCP Secret Manager plus PAM approval - the Director
+  superseded that plan (a second Google account would have been needed solely to hold the
+  approver role, since Google forbids approving one's own PAM grant, on top of a standing
+  cloud dependency and its cost). `age` reads its passphrase from the terminal directly, never
+  from anything Python passes it, so every secret- or registry-touching run needs the
+  Director at the keyboard - this is the approval gate GCP's PAM was meant to provide, built
+  instead from a property of the encryption tool itself. The macOS Keychain (`security` CLI,
+  account `headless`) and GCP Secret Manager both remain selectable via
+  `HEADLESS_SECRETS_BACKEND` (`keychain`, `gcp`) but neither is the default any more;
+  `GcpBackend`'s code stays code-ready but inactive (`gcloud` is not installed on this machine
+  yet).
 - Tooling gaps: `pwsh` absent, so `../worktree.ps1` cannot run; create worktrees by hand at
   `../worktrees/Headless/<branch>` with `git worktree add`.
 - Commit safety gate active: `core.hooksPath=.githooks` must be set in every clone/worktree
@@ -45,8 +56,14 @@ Record each working session's id here so it can be resumed with `claude --resume
 
 ## Open items
 
-- Install `gcloud`, create the Secret Manager project through `terraform/`, and switch
-  `HEADLESS_SECRETS_BACKEND=gcp` (Director-interactive auth needed).
+- Run this repository's own `vault.py init` / `vault.py set profile` on this machine (spec
+  004-age-vault; not yet done in this delivery, since the brief for that delivery excluded
+  touching `~/.headless/`) and record the outcome in the "Errands run" table below.
+- (Superseded 2026-08-25, spec 004-age-vault) ~~Install `gcloud`, create the Secret Manager
+  project through `terraform/`, and switch `HEADLESS_SECRETS_BACKEND=gcp`~~: the GCP Secret
+  Manager plus PAM plan is superseded by the local `age` vault above; `gcloud` install is no
+  longer on the critical path to a working secrets backend, only to activating `gcp` as a
+  non-default, explicitly-selected alternative.
 - Seed the Headless Chrome profile with the logins the first real errands need (ITR portal,
   ticketing, insurance) by running `scripts/probe.py <url>` and logging in by hand.
 - First real errand candidates (each its own spec): ITR portal walk (reuse `itr-wala` for the

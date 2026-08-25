@@ -15,10 +15,12 @@ SC-008). Test tasks are included and are written before the module code they cov
 **Organization**: Tasks are grouped by user story so each story is independently implementable
 and testable.
 
-**Status**: this delivery is spec-authoring only (per this feature's brief: no implementation,
-no commit). Every task below is unchecked - none of this feature's code exists yet. This differs
-from specs/003-login-persistence/tasks.md, whose boxes were already ticked because that feature's
-spec set was authored after its implementation had landed in the same delivery.
+**Status**: implemented 2026-08-25 (this delivery: full implementation, not committed - per this
+delivery's brief, work stops after the commit gate runs, staged but uncommitted). Every task below
+is ticked `[x]` except the ones whose only remaining step is a Director hand-run against
+`~/.headless/` or a real terminal passphrase prompt (T013, T018, T025), which this delivery's
+brief explicitly excludes; each of those is annotated `(Director UAT, pending)` with the automated
+portion it does cover already run and green.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -39,13 +41,13 @@ paths below are relative to the worktree root `../worktrees/Headless/v0.0.4/`.
 **Purpose**: the config surface (`age` as a valid, default backend value; the `age_file` field and
 its resolution rule) in place before either the backend or the CLI is written against it.
 
-- [ ] T001 [P] Update `.gitignore`: add `*.age` as a belt-and-braces entry (the vault lives
+- [x] T001 [P] Update `.gitignore`: add `*.age` as a belt-and-braces entry (the vault lives
   outside the repository by default, per `HEADLESS_AGE_FILE`'s default; this is the second line
   of defense, mirroring v0.0.3's `session-cookies.json*` entry)
-- [ ] T002 [P] Update `.env.example`: change the `HEADLESS_SECRETS_BACKEND` comment to name `age`
+- [x] T002 [P] Update `.env.example`: change the `HEADLESS_SECRETS_BACKEND` comment to name `age`
   as the default (alongside `keychain`/`gcp`), and add a new `HEADLESS_AGE_FILE` line documenting
   its default (`~/.headless/profile.age`) and its absolute-or-`~`-relative-only rule
-- [ ] T003 Update `headless/config.py`: add `"age"` to `VALID_SECRETS_BACKENDS`; change
+- [x] T003 Update `headless/config.py`: add `"age"` to `VALID_SECRETS_BACKENDS`; change
   `secrets_backend`'s default (the `pick(...)` call's fallback) from `"keychain"` to `"age"`; add
   `age_file: Path` to the `Config` dataclass; resolve it from `HEADLESS_AGE_FILE`, default
   `~/.headless/profile.age`, `~`-expanded; raise `ConfigError` if the expanded result is not
@@ -63,32 +65,32 @@ it to exist first.
 refusal, the no-decrypt `self_test()` - built and proven correct in isolation, with an injectable
 fake runner, before `scripts/vault.py` or `check_env.py` are wired to depend on it. Tests first.
 
-- [ ] T004 [P] Write `AgeBackend` decrypt/cache tests in `tests/test_secrets.py`: first
+- [x] T004 [P] Write `AgeBackend` decrypt/cache tests in `tests/test_secrets.py`: first
   `get_secret(name)` call invokes the fake runner exactly once with an argv shaped like
   `["age", "-d", str(vault_file)]` (or equivalent); a second `get_secret` call for a different
   name in the same instance invokes the runner zero additional times (SC-002); the returned value
   matches the fixture document's value for that name, exactly
-- [ ] T005 [P] Write `AgeBackend` failure-mode tests in `tests/test_secrets.py`: vault file
+- [x] T005 [P] Write `AgeBackend` failure-mode tests in `tests/test_secrets.py`: vault file
   missing -> a config-style error naming only the path, zero runner calls; runner returns
   nonzero -> a value-free error naming only the exit code plus the fixed hint `wrong passphrase or
   corrupted vault`, and a distinctive fixture-shaped stderr string the fake runner returns never
   appears anywhere in the raised exception's message (SC-007); `name` absent from a successfully
   decrypted document -> the existing `SecretMissing(name)`, unchanged
-- [ ] T006 [P] Write `AgeBackend` write-path and `self_test()` tests in `tests/test_secrets.py`:
+- [x] T006 [P] Write `AgeBackend` write-path and `self_test()` tests in `tests/test_secrets.py`:
   `put_secret`/`delete_secret` raise immediately, mentioning `scripts/vault.py`, with zero runner
   calls in either case; `self_test()` returns `True` when a stubbed `PATH` lookup and file
   existence check both succeed, `False` when either does not, and in every case invokes zero
   decrypt-shaped runner calls (SC-005)
-- [ ] T007 Implement `AgeBackend` in `headless/secrets.py`: constructor takes `vault_file: Path`
+- [x] T007 Implement `AgeBackend` in `headless/secrets.py`: constructor takes `vault_file: Path`
   and an optional `runner` callable (default wraps `subprocess.run` against the real `age`
   binary); `get_secret` decrypts at most once per instance, caches the parsed
   `dict[str, str]`, and serves every later call from that cache (data-model.md's `locked` ->
   `decrypted-cached` transition); `put_secret`/`delete_secret` raise directing the caller to
   `scripts/vault.py`; `self_test()` checks only `shutil.which("age")` and `vault_file.exists()`
-- [ ] T008 Update `open_vault` in `headless/secrets.py`: add the `"age"` branch, constructing
+- [x] T008 Update `open_vault` in `headless/secrets.py`: add the `"age"` branch, constructing
   `AgeBackend(config.age_file)`
-- [ ] T009 Run `python -m pytest -q tests/test_secrets.py -k age` and make T004-T006 green against
-  the T007-T008 implementation
+- [x] T009 Run `python -m pytest -q tests/test_secrets.py -k age` and make T004-T006 green against
+  the T007-T008 implementation (12 passed)
 
 **Checkpoint**: `AgeBackend` is proven correct and prompt-free-in-tests in isolation. Every user
 story below only has to wire it into `open_vault`'s existing dispatch (already done, T008) or
@@ -106,13 +108,13 @@ configuration, and a relative `HEADLESS_AGE_FILE` is refused the same way an out
 **Independent Test**: quickstart Scenarios 2-4 (hand-run: init, seed `profile`, confirm
 `check_env` and `vault.py list`) plus the automated tests below.
 
-- [ ] T010 [P] [US1] Write a default-backend test in `tests/test_config.py`: `load_config()` with
+- [x] T010 [P] [US1] Write a default-backend test in `tests/test_config.py`: `load_config()` with
   `HEADLESS_SECRETS_BACKEND` unset (and no override) resolves `secrets_backend == "age"` (SC-003)
-- [ ] T011 [P] [US1] Write `age_file` resolution tests in `tests/test_config.py`: no override ->
+- [x] T011 [P] [US1] Write `age_file` resolution tests in `tests/test_config.py`: no override ->
   the `~`-expanded default; an absolute override -> used as-is; a bare relative override (for
   example `"myvault.age"`) -> `ConfigError`, mirroring the existing `HEADLESS_PREVIEW_DIR`
   relative-path test's shape (research.md D2)
-- [ ] T012 [US1] Write a `ProfileRegistry` integration test in `tests/test_profile.py` (or
+- [x] T012 [US1] Write a `ProfileRegistry` integration test in `tests/test_profile.py` (or
   `tests/test_secrets.py`, implementer's choice, matching whichever file already covers this
   kind of cross-module test): an `AgeBackend` constructed with a fake runner whose fixture
   document holds a `profile` key equal to a small JSON registry string feeds
@@ -122,9 +124,9 @@ configuration, and a relative `HEADLESS_AGE_FILE` is refused the same way an out
 - [ ] T013 [US1] Run `python -m pytest -q tests/test_config.py tests/test_secrets.py
   tests/test_profile.py -k "age or backend"`, then quickstart Scenarios 2-4 by hand (Director
   UAT): `vault.py init`, `vault.py set profile` with a synthetic example, `check_env.py` reporting
-  the `vault` row PASS, `vault.py list` printing `profile` only. (Director UAT, pending - this
-  spec-authoring delivery does not execute it, per the brief's hard constraint against touching
-  `~/.headless/`.)
+  the `vault` row PASS, `vault.py list` printing `profile` only. Automated part DONE (34 passed,
+  2026-08-25). (Director UAT, pending - this implementation delivery does not execute the hand-run
+  part either, per the brief's hard constraint against touching `~/.headless/`.)
 
 **Checkpoint**: MVP core delivered. The vault holds one encrypted file, the default backend is
 `age` with zero configuration, and the existing `ProfileRegistry` contract is unchanged.
@@ -142,21 +144,21 @@ The mechanism itself (decrypt-once-and-cache, fail-soft-free error shapes) was a
 tested in Phase 2; this phase proves the properties that fall out of it, the same shape spec
 003's own User Story 3 validated properties Phase 2 there had already built.
 
-- [ ] T014 [P] [US2] Write an `errand.py` pre-resolution test in `tests/test_errand.py`: an
+- [x] T014 [P] [US2] Write an `errand.py` pre-resolution test in `tests/test_errand.py`: an
   `Errand` subclass whose `plan()` returns one `registry:`-sourced `FieldPlan`, run against a
   `FakeVault`-equivalent `AgeBackend` (fake runner) in `preview` mode (no `--apply`), triggers
   exactly one runner call - proving FR-024's "every mode, not only apply" claim holds for the new
   default backend the same way it already holds for `FakeVault` in existing tests
-- [ ] T015 [P] [US2] Write a probe-has-no-prompt test in `tests/test_errand.py` (or extend an
+- [x] T015 [P] [US2] Write a probe-has-no-prompt test in `tests/test_errand.py` (or extend an
   existing `probe.py` test, implementer's choice): running an `Errand` with an empty `plan()`
   against an `AgeBackend` (fake runner) triggers zero runner calls, in every mode - proving
   FR-024's `probe.py` carve-out still holds under the new default backend
-- [ ] T016 [P] [US2] Write the `check_env.py` vault-row age-branch tests in
+- [x] T016 [P] [US2] Write the `check_env.py` vault-row age-branch tests in
   `tests/test_check_env.py`: `age` present on `PATH` and vault file present -> PASS, zero runner
   calls of the decrypt shape; `age` absent -> FAIL with the `brew install age` hint; vault file
   absent -> FAIL with the `python scripts/vault.py init` hint; in every case, zero decrypt-shaped
   calls happen (SC-006, mirrors T006's `self_test()` proof at the `check_env` row level)
-- [ ] T017 [US2] Update `scripts/check_env.py`'s `_check_vault(config)`: when
+- [x] T017 [US2] Update `scripts/check_env.py`'s `_check_vault(config)`: when
   `config.secrets_backend == "age"`, check `shutil.which("age")` and
   `config.age_file.exists()` only (no `open_vault`/`self_test()` call that could differ from this
   contract); return the two hint strings from contracts/vault-and-cli.md's row 4 table; leave the
@@ -165,8 +167,8 @@ tested in Phase 2; this phase proves the properties that fall out of it, the sam
   `python -m pytest -q tests/test_check_env.py -k vault`, then quickstart Scenarios 5, 6, and 9 by
   hand (Director UAT): confirm the passphrase prompt appears exactly once for a
   registry-resolving snippet, confirm a wrong passphrase refuses cleanly with the fixed hint, and
-  re-read the policy reminder in Scenario 9. Automated parts pending implementation. The hand-run
-  parts are (Director UAT, pending).
+  re-read the policy reminder in Scenario 9. Automated parts DONE (5 passed; 4 passed, 2026-08-25).
+  The hand-run parts are (Director UAT, pending).
 
 **Checkpoint**: independent of User Story 1 in the same sense spec 003's US1/US2 were - both
 depend only on Phase 2's `AgeBackend` existing; neither story's tasks touch a line the other
@@ -183,11 +185,11 @@ platform.
 **Independent Test**: quickstart Scenario 10 (the fresh-clone walkthrough, hand-run) plus the
 automated tests below.
 
-- [ ] T019 [P] [US3] Write `vault.py init` tests in `tests/test_vault.py` (new file): vault file
+- [x] T019 [P] [US3] Write `vault.py init` tests in `tests/test_vault.py` (new file): vault file
   absent -> the fake runner is invoked once with an encrypt-shaped call, an empty (`{}`) plaintext
   document piped as its stdin payload, exit `0`, resolved path printed; vault file already present
   -> refused before any runner call, exit `1`, existing file's content untouched
-- [ ] T020 [P] [US3] Write `vault.py set`/`unset` tests in `tests/test_vault.py`: `set NAME` with
+- [x] T020 [P] [US3] Write `vault.py set`/`unset` tests in `tests/test_vault.py`: `set NAME` with
   a `getpass`-stubbed value decrypts once, mutates the in-memory document, re-encrypts once, and
   the constructed encrypt-call's stdin payload (parsed back as JSON) contains `NAME` mapped to the
   stubbed value; the value never appears in any captured `argv` across every subprocess call this
@@ -195,12 +197,12 @@ automated tests below.
   unchanged in exit code, when `NAME` was never present (FR-018's idempotence); a failed decrypt
   on either subcommand never reaches the mutate or re-encrypt step (data-model.md's failure
   isolation)
-- [ ] T021 [P] [US3] Write `vault.py list`/`path` tests in `tests/test_vault.py`: `list` against
+- [x] T021 [P] [US3] Write `vault.py list`/`path` tests in `tests/test_vault.py`: `list` against
   a fixture document with distinctive synthetic values prints every name, sorted, one per line,
   and none of the fixture's values appear anywhere in captured stdout (SC-004); `list` against an
   empty document prints zero lines; `path` prints the resolved `age_file` path and triggers zero
   runner calls of any kind, decrypt or encrypt
-- [ ] T022 [US3] Implement `scripts/vault.py`: `argparse` with subcommands `init`, `set NAME`,
+- [x] T022 [US3] Implement `scripts/vault.py`: `argparse` with subcommands `init`, `set NAME`,
   `unset NAME`, `list`, `path`; each subcommand follows data-model.md's DECRYPT -> MUTATE ->
   RE-ENCRYPT lifecycle (skipping DECRYPT for `init`, skipping RE-ENCRYPT for `list`/`path`);
   `set`'s value is read via `getpass.getpass()`, never `argv`; the re-encrypt step pipes the
@@ -208,9 +210,9 @@ automated tests below.
   file in the vault's own directory, `chmod 0600` (no-op on Windows, wrapped so it cannot raise
   there), then `os.replace` onto the vault path, mirroring `headless/session.py`'s
   `_export_session_cookies` atomic-write shape (research.md D6)
-- [ ] T023 [US3] Run `python -m pytest -q tests/test_vault.py` and make T019-T021 green against
-  the T022 implementation
-- [ ] T024 [US3] Add a "First-time setup" section to `README.md`: installing `age` (`brew install
+- [x] T023 [US3] Run `python -m pytest -q tests/test_vault.py` and make T019-T021 green against
+  the T022 implementation (13 passed)
+- [x] T024 [US3] Add a "First-time setup" section to `README.md`: installing `age` (`brew install
   age` on macOS; `winget install FiloSottile.age` or `scoop install age` on Windows, presented as
   alternatives), the venv/`requirements.txt`/`playwright install chromium` steps already
   documented, `git config core.hooksPath .githooks`, `python scripts/vault.py init` and
@@ -221,7 +223,9 @@ automated tests below.
 - [ ] T025 [US3] Run quickstart Scenario 10 by hand on at least one machine (Director UAT,
   pending): follow only the new README section top to bottom on a fresh-enough setup, confirm
   `check_env.py` reaches 5/5 PASS with the `vault` row naming `age`, and record the outcome (tool
-  name, platform, PASS/FAIL only - never any typed value) in `MEMORY.md`'s "Errands run" table
+  name, platform, PASS/FAIL only - never any typed value) in `MEMORY.md`'s "Errands run" table.
+  Not run in this delivery (real `age` install/prompt against `~/.headless/`, excluded by this
+  delivery's brief). (Director UAT, pending.)
 
 **Checkpoint**: every user story independently proven. `scripts/vault.py` is the only vault write
 path (FR-013 held structurally, T006's write-refusal tests plus this phase's own tests together),
@@ -231,24 +235,24 @@ and a fresh clone has a documented path to a working vault on either platform.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T026 [P] Update `CLAUDE.md`'s Secrets section: state the new default backend (`age`, local
+- [x] T026 [P] Update `CLAUDE.md`'s Secrets section: state the new default backend (`age`, local
   passphrase-encrypted vault, GCP Secret Manager plan superseded), the per-run passphrase gate
   (no caching of any kind), and the never-store-passwords-or-cards policy (FR-023, research.md D8)
-- [ ] T027 Regenerate `.specify/memory/constitution.md` to **1.3.0** (MINOR: the default secrets
+- [x] T027 Regenerate `.specify/memory/constitution.md` to **1.3.0** (MINOR: the default secrets
   backend changed, and one new explicit hard rule - never store a password or a card value - is
   added; not a wording-only PATCH, unlike v0.0.3's own bump) with a Sync Impact Report line
   describing the change
-- [ ] T028 [P] Add two new entries to `PATTERNS.md`: "Age vault" (summarizing D1-D7:
+- [x] T028 [P] Add two new entries to `PATTERNS.md`: "Age vault" (summarizing D1-D7:
   default-backend change, the derived vault-file location, decrypt-once-and-cache, the
   never-write-from-AgeBackend rule, the terminal-prompt-not-stdin mechanism that keeps the
   passphrase out of Python entirely, `check_env`'s reachability-only row) and "Passphrase is the
   gate" (summarizing the User Story 2 property: no caching of any kind, every secret-touching run
   in every mode prompts exactly once, `probe.py`'s empty plan does not)
-- [ ] T029 [P] Update `README.md`'s existing Setup section: the secrets step now names `age` as
+- [x] T029 [P] Update `README.md`'s existing Setup section: the secrets step now names `age` as
   the default and points at the new First-time setup section for the full walkthrough (T024
   already added that section; this task is the small cross-reference update to the older section
   so the two do not contradict each other)
-- [ ] T030 Add the v0.0.4 Changelog row to `Project_Structure.md` listing every file touched
+- [x] T030 Add the v0.0.4 Changelog row to `Project_Structure.md` listing every file touched
   (`headless/secrets.py`, `headless/config.py`, `scripts/vault.py` [new], `scripts/check_env.py`,
   `.gitignore`, `.env.example`, `tests/test_secrets.py`, `tests/test_vault.py` [new],
   `tests/test_config.py`, `tests/test_errand.py`, `tests/test_check_env.py`, plus every
@@ -256,15 +260,16 @@ and a fresh clone has a documented path to a working vault on either platform.
   `scripts/vault.py` - this table is also where the repository's version is recorded, since no
   separate `VERSION`, `pyproject.toml`, or `package.json` file exists anywhere in the tree
   (confirmed by the same repository-wide search spec 003's research.md D8 already ran)
-- [ ] T031 [P] Update `terraform/README.md`: add a status paragraph recording that the local
+- [x] T031 [P] Update `terraform/README.md`: add a status paragraph recording that the local
   `age` vault (this feature) replaces the planned GCP Secret Manager backend (Director decision
   2026-08-25); no cloud resource will be created under this plan; `GcpBackend`'s code stays in the
   tree, inert, in case a future decision reverses this
-- [ ] T032 [P] Update `MEMORY.md`: record the Director's decision to supersede the GCP Secret
+- [x] T032 [P] Update `MEMORY.md`: record the Director's decision to supersede the GCP Secret
   Manager plus PAM plan with the local `age` vault (dated 2026-08-25), and add the "Errands run"
   table entry for the fresh-clone walkthrough once T025 has produced a real outcome to record
-- [ ] T033 Run the commit gate: `python -m pytest -q && python scripts/verify_structure.py &&
-  git add -A && python scripts/scan_secrets.py --staged`
+- [x] T033 Run the commit gate: `python -m pytest -q && python scripts/verify_structure.py &&
+  git add -A && python scripts/scan_secrets.py --staged` (272 passed, 8 skipped; verify_structure
+  SUCCESS; scan_secrets --staged exit 0; left staged, uncommitted per this delivery's brief)
 
 ---
 

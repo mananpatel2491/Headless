@@ -32,7 +32,7 @@ log, or place in any preview artifact. Every value in it is exactly the kind of 
 | Input state | Behavior | Output / observable effect |
 | :--- | :--- | :--- |
 | First call this process, vault file exists, correct passphrase entered | Runs the injected runner (or `age -d <file>`) once, captures stdout in memory, parses JSON, caches it. | The prompt appears on the terminal exactly once. Returns `document[name]` if present. |
-| First call this process, vault file exists, wrong passphrase entered | Runner exits nonzero. | Raises a value-free error: `age exited <code>: wrong passphrase or corrupted vault`. Never `age`'s own stderr text. Nothing cached; the next call re-attempts the decrypt (still counts as the process's "first call" state, since nothing succeeded). |
+| First call this process, vault file exists, wrong passphrase entered | Runner exits nonzero. | Raises a value-free error: `age exited <code>: wrong passphrase, corrupted vault, or no terminal for the passphrase prompt`. Never `age`'s own stderr text. Nothing cached; the next call re-attempts the decrypt (still counts as the process's "first call" state, since nothing succeeded). |
 | First call this process, vault file does not exist | No runner call is made. | Raises a config-style error naming only the resolved path (for example: `vault file not found: /Users/x/.headless/profile.age (run: python scripts/vault.py init)`). |
 | Any call, `name` absent from the cached document | No runner call (already cached, or this is the same failed-decrypt case above). | Raises the existing `SecretMissing(name)`, unchanged. |
 | Second or later call this process, any `name` present in the cached document | No runner call at all. | Returns the cached value directly; no prompt. |
@@ -62,7 +62,7 @@ Automation-First CLI pattern), not an `Errand` subclass.
 | Subcommand | Precondition checked | Prompts | On success | On failure |
 | :--- | :--- | :--- | :--- | :--- |
 | `init` | Vault file must NOT already exist | 2 (`age -e -p`'s own enter/confirm) | Creates an empty (`{}`) vault at `0600`; prints the resolved path; exit `0` | File already exists: prints a refusal naming the path; exit `1`; no `age` invocation at all |
-| `set NAME` | Vault file must exist | 2 (1 decrypt + `age -e -p`'s enter/confirm) | Vault re-encrypted with `NAME` set to the value read via hidden `getpass`; exit `0`; prints nothing about the value | Vault missing, wrong passphrase, or `age` unreachable: value-free error to stderr; exit `1` |
+| `set NAME` | Vault file must exist | 2 (1 decrypt + `age -e -p`'s enter/confirm) | Vault re-encrypted with `NAME` set to the value read via hidden `getpass`; exit `0`; prints nothing about the value | Vault missing, wrong passphrase, or `age` unreachable: value-free error printed to stdout (`REFUSED: ...`, matching `errand.py`'s own convention, not stderr); exit `1` |
 | `unset NAME` | Vault file must exist | 2 (1 decrypt + `age -e -p`'s enter/confirm) | Vault re-encrypted with `NAME` removed (idempotent: succeeds whether or not `NAME` was present); exit `0` | Same failure shape as `set` |
 | `list` | Vault file must exist | 1 (decrypt only) | Prints every item name, one per line, sorted, nothing else; empty vault prints zero lines; exit `0` | Same failure shape as `set`, minus the re-encrypt possibility |
 | `path` | None | 0 | Prints the resolved vault file path; exit `0` | Never fails (pure path resolution; does not require the file to exist) |
@@ -84,8 +84,8 @@ unknown flag).
 
 | Condition | Status | Hint |
 | :--- | :--- | :--- |
-| `age` resolves on `PATH` and the vault file exists | PASS | (none) |
-| `age` not found on `PATH` | FAIL | `brew install age` (macOS) - the row's hint text names the install command for whichever platform this check runs on, per README's First-time setup section |
+| `age` resolves on `PATH` and the vault file exists | PASS | `age backend` (names the active backend, FR-015, US3-AS1) |
+| `age` not found on `PATH` | FAIL | Platform-appropriate install command: `brew install age` (`sys.platform == "darwin"`), `winget install FiloSottile.age` (`sys.platform == "win32"`), or `install age from your package manager` (any other platform) |
 | Vault file does not exist | FAIL | `python scripts/vault.py init` |
 
 No row state ever attempts a decrypt (spec FR-014, D7). This row's contract for the `keychain` and

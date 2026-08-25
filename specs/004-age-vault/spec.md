@@ -137,9 +137,10 @@ README's "First-time setup" section, in order, and confirm `python scripts/check
 
 ### Edge Cases
 
-- The Director types the wrong passphrase at decrypt: the run refuses with the fixed hint ("wrong
-  passphrase or corrupted vault"), no partial data is exposed, and this applies identically
-  whether the caller is `AgeBackend.get_secret` or `scripts/vault.py`'s own read step.
+- The Director types the wrong passphrase at decrypt: the run refuses with the fixed hint
+  ("wrong passphrase, corrupted vault, or no terminal for the passphrase prompt"), no partial
+  data is exposed, and this applies identically whether the caller is `AgeBackend.get_secret`
+  or `scripts/vault.py`'s own read step.
 - The vault file does not exist yet when `get_secret` is called: a config-style error names only
   the resolved path, with a hint to run `vault.py init`; never a stack trace, never vault content
   (there is none to leak).
@@ -195,18 +196,21 @@ README's "First-time setup" section, in order, and confirm `python scripts/check
   existing `SecretMissing`, unchanged.
 - **FR-011**: A `get_secret` call when the vault file does not exist MUST raise a config-style
   error naming only the resolved file path, never any vault content (there is none to name).
-- **FR-012**: A failed decrypt (wrong passphrase, or a corrupted or non-`age` file) MUST raise a
-  value-free error naming only `age`'s exit code, alongside one fixed hint string ("wrong
-  passphrase or corrupted vault"); the error MUST NEVER include any part of `age`'s own stderr
-  output.
+- **FR-012**: A failed decrypt (wrong passphrase, a corrupted or non-`age` file, or no
+  controlling terminal available to prompt on) MUST raise a value-free error naming only
+  `age`'s exit code, alongside one fixed hint string ("wrong passphrase, corrupted vault, or
+  no terminal for the passphrase prompt"); the error MUST NEVER include any part of `age`'s
+  own stderr output.
 - **FR-013**: `AgeBackend.put_secret` and `AgeBackend.delete_secret` MUST raise a clear error
   directing the caller to `scripts/vault.py`; an errand script MUST NEVER be able to trigger a
   vault write or a surprise re-encrypt prompt chain.
 - **FR-014**: `AgeBackend.self_test()` MUST check only that `age` resolves on `PATH` and that the
   vault file exists. It MUST NEVER decrypt and MUST NEVER prompt for a passphrase, so that
   `scripts/check_env.py` remains entirely prompt-free.
-- **FR-015**: `scripts/check_env.py`'s vault row MUST report the `age` backend by name and, on
-  failure, print a hint naming `brew install age` when the binary is missing or
+- **FR-015**: `scripts/check_env.py`'s vault row MUST report the `age` backend by name on
+  success and, on failure, print a hint naming a platform-appropriate install command (`brew
+  install age` on macOS, `winget install FiloSottile.age` on Windows, a generic
+  package-manager hint elsewhere) when the binary is missing, or
   `python scripts/vault.py init` when the vault file is missing.
 - **FR-016**: `scripts/vault.py init` MUST refuse to run, before invoking `age` at all, when the
   vault file already exists. Otherwise it MUST create a new, empty (`{}`) vault by encrypting
@@ -318,9 +322,14 @@ README's "First-time setup" section, in order, and confirm `python scripts/check
   a Python `subprocess` call to it inherits the terminal for the prompt while `stdin` remains
   free for piping plaintext data to an encrypt call; the passphrase itself is never something
   Python's own code receives, sees, or could log even if it tried.
-- There is no macOS GUI for `age` (Homebrew has no cask for one, and the community's own
-  `awesome-age` list has none for macOS); this feature and its documentation stay entirely
-  command-line.
+- There is no *packaged* macOS GUI for `age` (Homebrew has no cask for one, and the
+  community's own `awesome-age` list had none for macOS when this feature was scoped); this
+  feature's own implementation and its normative documentation stay entirely command-line. A
+  young, independent, unpackaged third-party GUI, [Age Mac](https://github.com/vikiea/age_mac)
+  (ad-hoc signed, DMG releases, opens the same vault file format `scripts/vault.py` writes),
+  surfaced after that survey and is mentioned in the README's First-time setup section as a
+  clearly optional, at-your-own-risk alternative to the command line - not something this
+  feature builds, bundles, verifies, or depends on.
 - The Director is the only person who runs this tool; the vault's threat model is the same
   single-user, local-machine model `CLAUDE.md`'s Secrets section already assumes for the
   Keychain backend today.
@@ -332,7 +341,7 @@ README's "First-time setup" section, in order, and confirm `python scripts/check
 - Encrypting `session-cookies.json`: it already carries vault-grade classification inside the
   profile directory (`CLAUDE.md`'s Browser and Secrets sections); revisit only if the Director
   asks for it specifically.
-- Any GUI for the vault, on any platform.
+- Building or bundling any GUI for the vault, on any platform: `scripts/vault.py` is the only interface this feature ships. (The README's optional mention of a third-party GUI, Age Mac, is a documentation pointer, not something this feature builds or maintains.)
 - Activating any cloud secrets backend: the GCP Secret Manager plan is superseded by this
   feature; `GcpBackend`'s code stays in place, unused, and `terraform/README.md` records the
   supersession, but no cloud resource is created by this feature.

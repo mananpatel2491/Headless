@@ -72,7 +72,7 @@ locked (constructed, no get_secret call has happened yet)
   │    on success: parse stdout as JSON -> VaultDocument, cache it
   │    on missing file: raise a config-style error naming only the path
   │    on nonzero exit: raise a value-free error naming only the exit code
-  │                      plus the fixed hint "wrong passphrase or corrupted vault"
+  │                      plus the fixed hint "wrong passphrase, corrupted vault, or no terminal for the passphrase prompt"
   ▼
 decrypted-cached (the VaultDocument is held in memory for the rest of this process)
   │

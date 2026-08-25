@@ -3,6 +3,7 @@
 *.token
 profile.local.json
 service_account*.json
+*.age*
 
 # Runtime artifacts
 previews/

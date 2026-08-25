@@ -112,7 +112,7 @@ This is the evidence base for D1 through D7.
   optional injectable `runner` callable (FR-009) so tests never invoke the real binary. Plaintext
   is never written to disk and never printed, at any point. A missing vault file raises a
   config-style error naming only the path. A failed decrypt raises a value-free error naming
-  only `age`'s exit code, plus the fixed hint "wrong passphrase or corrupted vault" - never any
+  only `age`'s exit code, plus the fixed hint "wrong passphrase, corrupted vault, or no terminal for the passphrase prompt" - never any
   fragment of `age`'s own stderr. `put_secret`/`delete_secret` raise, pointing the caller at
   `scripts/vault.py` (D7). `self_test()` checks only `PATH` and file existence - never a decrypt.
 - **Rationale**: decrypting once per process, not once per `get_secret` call, is what makes User
@@ -167,10 +167,10 @@ This is the evidence base for D1 through D7.
 ## D6. `scripts/vault.py`'s write mechanics: plaintext never touches disk, atomic replace, cross-platform
 
 - **Decision**: every write (`init`, `set`, `unset`) builds the new plaintext JSON mapping
-  entirely in memory, pipes it to `age -e -p -a -o <target>` via the child process's `stdin`
-  (never a temp plaintext file), captures the resulting ciphertext from `stdout`, writes that
-  ciphertext to a temporary file in the vault's own directory, then atomically replaces the
-  vault's path with it (`os.replace`) and sets file mode `0600` - the same
+  entirely in memory, pipes it to `age -e -p -a` (deliberately no `-o`) via the child process's
+  `stdin` (never a temp plaintext file), captures the resulting ciphertext from `stdout`,
+  writes that ciphertext to a temporary file in the vault's own directory, then atomically
+  replaces the vault's path with it (`os.replace`) and sets file mode `0600` - the same
   decrypt-mutate-atomic-re-encrypt shape `headless/session.py`'s
   `_export_session_cookies` already established for `session-cookies.json` in v0.0.3. On
   Windows, the `chmod 0600` call is a documented no-op (Windows' own ACL model does not have a
