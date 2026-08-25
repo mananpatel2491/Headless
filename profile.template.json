@@ -1,0 +1,90 @@
+{
+  "_note": "Template for the 'profile' vault item (the structure the code expects). Copy this shape, replace every synthetic value with your real one, then store it: python scripts/vault.py get profile -> edit in your editor -> python scripts/vault.py set profile. Arrays: every element carries a 'type' field, unique within its array - registry paths address elements by it (identities.self.first_name). Never commit real values; this file stays synthetic. Policy: no passwords and no payment card data, in any field.",
+  "identities": [
+    {
+      "type": "self",
+      "first_name": "Test",
+      "last_name": "Testerson",
+      "dob": "1990-01-31",
+      "email": "director@example.com",
+      "phone": "555-0100",
+      "currently_insured": "yes",
+      "licence_number": "T555-0000-0000",
+      "licence_state": "MI"
+    },
+    {
+      "type": "spouse",
+      "first_name": "Spouse",
+      "last_name": "Testerson",
+      "dob": "1991-02-28",
+      "email": "director@example.com",
+      "phone": "555-0101",
+      "currently_insured": "yes",
+      "licence_number": "T555-0000-0001",
+      "licence_state": "MI"
+    }
+  ],
+  "addresses": [
+    {
+      "type": "home",
+      "line1": "1 Example Street",
+      "city": "Example City",
+      "state": "MI",
+      "zip": "48000"
+    },
+    {
+      "type": "rental",
+      "line1": "2 Example Street",
+      "city": "Example City",
+      "state": "MI",
+      "zip": "48000"
+    }
+  ],
+  "vehicles": [
+    {
+      "type": "primary",
+      "vin": "1HGCM82633A004352",
+      "year": "2022",
+      "make": "Honda",
+      "model": "CR-V"
+    }
+  ],
+  "insurance": {
+    "companies": [
+      "progressive"
+    ],
+    "current_policy": {
+      "insurer": "example-current-insurer",
+      "premium": {
+        "term_months": "6",
+        "amount": "600.00"
+      },
+      "coverages": [
+        {
+          "line": "bodily_injury",
+          "limit": "100k/300k",
+          "deductible": "",
+          "premium": ""
+        },
+        {
+          "line": "property_damage",
+          "limit": "100k",
+          "deductible": "",
+          "premium": ""
+        },
+        {
+          "line": "collision",
+          "limit": "",
+          "deductible": "500",
+          "premium": ""
+        },
+        {
+          "line": "comprehensive",
+          "limit": "",
+          "deductible": "500",
+          "premium": ""
+        }
+      ]
+    }
+  }
+}
