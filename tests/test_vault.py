@@ -324,3 +324,159 @@ def test_get_missing_vault_file_refuses_with_zero_runner_calls(age_file_env, cap
     assert exit_code == 1
     assert runner.calls == []
     assert "REFUSED: vault file not found" in capsys.readouterr().out
+
+
+# --- v0.0.4.2: verify ----------------------------------------------------
+
+TEMPLATE_DOC = {
+    "_note": "doc key, ignored",
+    "identities": [
+        {"type": "self", "first_name": "Test", "licence": {"number": "T555", "state": "MI"}},
+        {"type": "spouse", "first_name": "Spouse", "licence": {"number": "T556", "state": "MI"}},
+    ],
+    "addresses": [
+        {"type": "home", "zip": "48000", "currently_insured": "yes", "policy_doc": "/path/x.pdf"},
+    ],
+    "feature_configs": {"insurance": {"companies": ["progressive"]}},
+}
+
+
+@pytest.fixture
+def template_file(monkeypatch, tmp_path):
+    """Point vault.REPO_ROOT at a tmp copy so tests never depend on the real
+    repo-root template's evolving content."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "profile.template.json").write_text(json.dumps(TEMPLATE_DOC))
+    monkeypatch.setattr(vault, "REPO_ROOT", root)
+    return root / "profile.template.json"
+
+
+def _runner_with_profile(age_file_env, profile: object) -> "_FakeRunner":
+    age_file_env.write_bytes(b"fixture-ciphertext")
+    return _FakeRunner(decrypt_document={"profile": json.dumps(profile)})
+
+
+def test_verify_clean_profile_matches(age_file_env, template_file, capsys):
+    profile = {
+        "identities": [
+            {"type": "self", "first_name": "A", "licence": {"number": "n", "state": "MI"}},
+            {"type": "spouse", "first_name": "B", "licence": {"number": "n2", "state": "MI"}},
+        ],
+        "addresses": [
+            {"type": "home", "zip": "48001", "currently_insured": "yes", "policy_doc": "/p.pdf"},
+        ],
+        "feature_configs": {"insurance": {"companies": ["progressive", "geico"]}},
+    }
+    exit_code = vault.main(["verify"], runner=_runner_with_profile(age_file_env, profile))
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert "profile matches the template" in out
+
+
+def test_verify_unknown_field_is_error_and_value_free(age_file_env, template_file, capsys):
+    profile = {
+        "identities": [
+            {"type": "self", "first_name": DISTINCTIVE_VALUE, "licnece": {"number": "n", "state": "MI"}},
+        ],
+        "addresses": [], "feature_configs": {"insurance": {"companies": []}},
+    }
+    exit_code = vault.main(["verify"], runner=_runner_with_profile(age_file_env, profile))
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "ERROR  identities[type=self].licnece: unknown field (not in the template)" in out
+    assert DISTINCTIVE_VALUE not in out  # field VALUES never print
+
+
+def test_verify_missing_field_is_warning_only(age_file_env, template_file, capsys):
+    profile = {
+        "identities": [
+            {"type": "self", "licence": {"number": "n", "state": "MI"}},  # first_name absent
+            {"type": "spouse", "first_name": "B", "licence": {"number": "n2", "state": "MI"}},
+        ],
+        "addresses": [
+            {"type": "home", "zip": "48001", "currently_insured": "yes", "policy_doc": "/p.pdf"},
+        ],
+        "feature_configs": {"insurance": {"companies": []}},
+    }
+    exit_code = vault.main(["verify"], runner=_runner_with_profile(age_file_env, profile))
+    out = capsys.readouterr().out
+    assert exit_code == 0  # warnings alone do not fail verify
+    assert "WARN  identities[type=self].first_name: field in the template but not in the profile" in out
+
+
+def test_verify_duplicate_type_is_error(age_file_env, template_file, capsys):
+    profile = {
+        "identities": [
+            {"type": "self", "first_name": "A", "licence": {"number": "n", "state": "MI"}},
+            {"type": "self", "first_name": "B", "licence": {"number": "n2", "state": "MI"}},
+        ],
+        "addresses": [], "feature_configs": {"insurance": {"companies": []}},
+    }
+    exit_code = vault.main(["verify"], runner=_runner_with_profile(age_file_env, profile))
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "duplicate 'type' value" in out
+
+
+def test_verify_missing_type_discriminator_is_error(age_file_env, template_file, capsys):
+    profile = {
+        "identities": [{"first_name": "A", "licence": {"number": "n", "state": "MI"}}],
+        "addresses": [], "feature_configs": {"insurance": {"companies": []}},
+    }
+    exit_code = vault.main(["verify"], runner=_runner_with_profile(age_file_env, profile))
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "element has no 'type' discriminator" in out
+
+
+def test_verify_kind_mismatch_is_error(age_file_env, template_file, capsys):
+    profile = {
+        "identities": {"type": "self"},  # object where the template has an array
+        "addresses": [], "feature_configs": {"insurance": {"companies": []}},
+    }
+    exit_code = vault.main(["verify"], runner=_runner_with_profile(age_file_env, profile))
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "ERROR  identities: expected array, found object" in out
+
+
+def test_verify_scalar_array_rejects_object_elements(age_file_env, template_file, capsys):
+    profile = {
+        "identities": [], "addresses": [],
+        "feature_configs": {"insurance": {"companies": [{"name": "progressive"}]}},
+    }
+    exit_code = vault.main(["verify"], runner=_runner_with_profile(age_file_env, profile))
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "ERROR  feature_configs.insurance.companies[0]: expected a plain value" in out
+
+
+def test_verify_profile_item_missing_refuses(age_file_env, template_file, capsys):
+    age_file_env.write_bytes(b"fixture-ciphertext")
+    runner = _FakeRunner(decrypt_document={"other": "x"})
+    exit_code = vault.main(["verify"], runner=runner)
+    assert exit_code == 1
+    assert "REFUSED: item 'profile' not in the vault" in capsys.readouterr().out
+
+
+def test_verify_template_missing_refuses_before_decrypt(age_file_env, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(vault, "REPO_ROOT", tmp_path / "empty-root")
+    runner = _FakeRunner()
+    exit_code = vault.main(["verify"], runner=runner)
+    assert exit_code == 1
+    assert runner.calls == []  # refused before any decrypt prompt
+    assert "REFUSED: template not found" in capsys.readouterr().out
+
+
+def test_verify_unknown_element_type_checked_against_first_template_element(age_file_env, template_file, capsys):
+    profile = {
+        "identities": [{"type": "child", "first_name": "C", "licence": {"number": "n", "state": "MI"}}],
+        "addresses": [], "feature_configs": {"insurance": {"companies": []}},
+    }
+    exit_code = vault.main(["verify"], runner=_runner_with_profile(age_file_env, profile))
+    out = capsys.readouterr().out
+    # a new type the template does not know is not itself an error; its
+    # fields are checked against the array's first element template
+    assert exit_code == 0
+    assert "profile matches the template" in out

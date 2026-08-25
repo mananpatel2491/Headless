@@ -50,7 +50,7 @@ consulting along the way.
    python scripts/vault.py init
    python scripts/vault.py set profile
    ```
-   The expected structure of the `profile` item is `profile.template.json` at the repository root - copy its shape and replace every synthetic value with your real one. The template is the contract: the code's registry paths are tested against it.
+   The expected structure of the `profile` item is `profile.template.json` at the repository root - copy its shape and replace every synthetic value with your real one. The template is the contract: the code's registry paths are tested against it. After storing your real profile, `python scripts/vault.py verify` checks its structure against the template and reports any mismatch as a value-free path.
    `init` prompts twice (enter, then confirm) for a brand-new passphrase - choose a real one
    and remember it; there is no way to recover it and no option to save it anywhere. `set
    profile` prompts once to decrypt, then a hidden prompt for the value itself, then `age`'s
