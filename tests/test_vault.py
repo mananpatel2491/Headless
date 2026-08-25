@@ -7,6 +7,7 @@ headless/secrets.py's AgeBackend tests do.
 
 from __future__ import annotations
 
+import io
 import json
 from types import SimpleNamespace
 
@@ -100,6 +101,7 @@ def test_init_refuses_when_vault_file_already_present(age_file_env, capsys):
 
 
 def test_set_stores_value_via_getpass_never_argv(age_file_env, monkeypatch):
+    monkeypatch.setattr(vault.sys, "stdin", _TtyStdin())  # route to the getpass path (v0.0.4.3)
     vault_file = age_file_env
     vault_file.parent.mkdir(parents=True, exist_ok=True)
     vault_file.write_text("existing-ciphertext", encoding="utf-8")
@@ -274,6 +276,7 @@ def test_init_sets_mode_0600_on_first_write(age_file_env):
 
 
 def test_set_re_encrypt_keeps_mode_0600_after_replace(age_file_env, monkeypatch):
+    monkeypatch.setattr(vault.sys, "stdin", _TtyStdin())  # route to the getpass path (v0.0.4.3)
     vault_file = age_file_env
     vault_file.parent.mkdir(parents=True, exist_ok=True)
     vault_file.write_text("existing-ciphertext", encoding="utf-8")
@@ -480,3 +483,79 @@ def test_verify_unknown_element_type_checked_against_first_template_element(age_
     # fields are checked against the array's first element template
     assert exit_code == 0
     assert "profile matches the template" in out
+
+
+# --- v0.0.4.3: set via piped stdin + clean abort -------------------------
+
+
+class _NonTtyStdin(io.StringIO):
+    def isatty(self):
+        return False
+
+
+class _TtyStdin(io.StringIO):
+    """Stands in for a real terminal stdin: isatty() True routes cmd_set to
+    the interactive getpass path (pytest's own captured stdin reports False,
+    which would route to the piped path instead); getpass itself is always
+    monkeypatched in these tests, so this object is never read."""
+
+    def isatty(self):
+        return True
+
+
+def test_set_reads_piped_stdin_and_never_calls_getpass(age_file_env, monkeypatch, capsys):
+    age_file_env.write_bytes(b"fixture-ciphertext")
+    runner = _FakeRunner(decrypt_document={})
+    big_value = "x" * 5000  # far past the 1024-byte canonical line limit
+    monkeypatch.setattr(vault.sys, "stdin", _NonTtyStdin(big_value + "\n"))
+    monkeypatch.setattr(vault.getpass, "getpass", lambda *a, **k: pytest.fail("getpass must not be called on piped stdin"))
+
+    exit_code = vault.main(["set", "profile"], runner=runner)
+
+    assert exit_code == 0
+    stored = json.loads(runner.stdin_payloads[-1].decode("utf-8"))
+    assert stored["profile"] == big_value  # exactly one trailing newline stripped
+    assert "value read from stdin (piped)" in capsys.readouterr().out
+
+
+def test_set_piped_empty_value_refuses(age_file_env, monkeypatch, capsys):
+    age_file_env.write_bytes(b"fixture-ciphertext")
+    runner = _FakeRunner(decrypt_document={})
+    monkeypatch.setattr(vault.sys, "stdin", _NonTtyStdin("\n"))
+
+    exit_code = vault.main(["set", "profile"], runner=runner)
+
+    assert exit_code == 1
+    assert "REFUSED: empty value on stdin" in capsys.readouterr().out
+    assert len(runner.calls) == 1  # decrypt only; no re-encrypt happened
+
+
+def test_set_interactive_keyboard_interrupt_aborts_cleanly(age_file_env, monkeypatch, capsys):
+    age_file_env.write_bytes(b"fixture-ciphertext")
+    runner = _FakeRunner(decrypt_document={})
+
+    def _interrupt(*a, **k):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(vault.sys, "stdin", _TtyStdin())
+    monkeypatch.setattr(vault.getpass, "getpass", _interrupt)
+
+    exit_code = vault.main(["set", "profile"], runner=runner)
+
+    assert exit_code == 130
+    assert "aborted: no value read; vault unchanged" in capsys.readouterr().out
+    assert len(runner.calls) == 1  # decrypt only; the vault was never re-encrypted
+
+
+def test_set_interactive_value_at_canonical_limit_refuses(age_file_env, monkeypatch, capsys):
+    age_file_env.write_bytes(b"fixture-ciphertext")
+    runner = _FakeRunner(decrypt_document={})
+    monkeypatch.setattr(vault.sys, "stdin", _TtyStdin())
+    monkeypatch.setattr(vault.getpass, "getpass", lambda *a, **k: "y" * 1024)
+
+    exit_code = vault.main(["set", "profile"], runner=runner)
+
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "may have been truncated" in out
+    assert len(runner.calls) == 1  # refused before any re-encrypt

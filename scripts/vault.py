@@ -29,6 +29,13 @@ prompt; nothing is cached across invocations, or across processes (FR-021).
 an environment variable (FR-017, SC-008) - it reaches `age` only through
 piped stdin bytes built in memory.
 
+`set NAME` also accepts the value on PIPED stdin (`pbpaste | python
+scripts/vault.py set profile`; Windows: `Get-Clipboard | python
+scripts\\vault.py set profile`) - required for values of 1024 characters or
+more, which macOS terminals truncate at the hidden prompt (the canonical
+input line limit); the interactive prompt refuses such values rather than
+storing a silently cut-off paste.
+
 `get NAME` (v0.0.4.1) prints item NAME's raw value to stdout - the one
 deliberate, documented exception to the never-print-values rule: a
 Director-invoked read of his own vault, on his own terminal, behind the
@@ -149,7 +156,34 @@ def cmd_set(name: str, config: Config, runner: Callable[..., object]) -> int:
     except (ConfigError, GateRefused) as exc:
         print(f"REFUSED: {exc}")
         return 1
-    value = getpass.getpass(f"Value for {name!r} (hidden, never echoed): ")
+    if not sys.stdin.isatty():
+        # Piped value (e.g. `pbpaste | python scripts/vault.py set profile`):
+        # macOS terminals cap one canonical (line-buffered) input line at 1024
+        # bytes, so a large JSON pasted into the hidden prompt stalls and
+        # never returns (verified 2026-08-25 on this machine: a 2000-char
+        # line into getpass on a pty hangs). A pipe has no such limit and
+        # still keeps the value out of argv, files, and the scrollback. The
+        # passphrase prompts are unaffected: age reads /dev/tty directly.
+        value = sys.stdin.read()
+        if value.endswith("\n"):
+            value = value[:-1]
+        if not value:
+            print("REFUSED: empty value on stdin")
+            return 1
+        print("value read from stdin (piped)")
+    else:
+        try:
+            value = getpass.getpass(f"Value for {name!r} (hidden, never echoed): ")
+        except (KeyboardInterrupt, EOFError):
+            print("\naborted: no value read; vault unchanged")
+            return 130
+        if len(value) >= 1024:
+            # The terminal's canonical buffer almost certainly truncated a
+            # longer paste at this boundary; storing a silently cut-off
+            # profile would corrupt it. Refuse and point at the pipe path.
+            print("REFUSED: value is 1024+ characters and may have been truncated by the "
+                  "terminal's input limit; pipe it instead: pbpaste | python scripts/vault.py set " + name)
+            return 1
     document[name] = value
     try:
         _encrypt_document(document, config.age_file, runner)
