@@ -29,8 +29,16 @@ prompt; nothing is cached across invocations, or across processes (FR-021).
 an environment variable (FR-017, SC-008) - it reaches `age` only through
 piped stdin bytes built in memory.
 
+`get NAME` (v0.0.4.1) prints item NAME's raw value to stdout - the one
+deliberate, documented exception to the never-print-values rule: a
+Director-invoked read of his own vault, on his own terminal, behind the
+passphrase prompt, for the fetch -> edit in an editor -> `set` round trip.
+The rule holds everywhere non-interactive: no log, artifact, or error
+message ever carries a value, and no errand code path calls `get`.
+
 Usage:
     python scripts/vault.py init
+    python scripts/vault.py get NAME
     python scripts/vault.py set NAME
     python scripts/vault.py unset NAME
     python scripts/vault.py list
@@ -151,6 +159,19 @@ def cmd_set(name: str, config: Config, runner: Callable[..., object]) -> int:
     return 0
 
 
+def cmd_get(name: str, config: Config, runner: Callable[..., object]) -> int:
+    try:
+        document = decrypt_age_document(config.age_file, runner)
+    except (ConfigError, GateRefused) as exc:
+        print(f"REFUSED: {exc}")
+        return 1
+    if name not in document:
+        print(f"REFUSED: item {name!r} not in the vault")
+        return 1
+    print(document[name])
+    return 0
+
+
 def cmd_unset(name: str, config: Config, runner: Callable[..., object]) -> int:
     try:
         document = decrypt_age_document(config.age_file, runner)
@@ -194,6 +215,12 @@ def _build_parser() -> argparse.ArgumentParser:
     set_parser = subparsers.add_parser("set", help="Set NAME's value via a hidden prompt (never argv).")
     set_parser.add_argument("name")
 
+    get_parser = subparsers.add_parser(
+        "get",
+        help="Print NAME's raw value to stdout (the documented Director-terminal exception).",
+    )
+    get_parser.add_argument("name")
+
     unset_parser = subparsers.add_parser("unset", help="Remove NAME. Succeeds whether or not it was present.")
     unset_parser.add_argument("name")
 
@@ -219,6 +246,8 @@ def main(argv: list[str] | None = None, *, runner: Callable[..., object] | None 
         return cmd_init(config, active_runner)
     if args.command == "set":
         return cmd_set(args.name, config, active_runner)
+    if args.command == "get":
+        return cmd_get(args.name, config, active_runner)
     if args.command == "unset":
         return cmd_unset(args.name, config, active_runner)
     if args.command == "list":

@@ -286,3 +286,41 @@ def test_set_re_encrypt_keeps_mode_0600_after_replace(age_file_env, monkeypatch)
     assert exit_code == 0
     mode = vault_file.stat().st_mode & 0o777
     assert mode == 0o600
+
+
+# --- v0.0.4.1: get -------------------------------------------------------
+
+
+def test_get_prints_exactly_the_value(age_file_env, capsys):
+    age_file_env.write_bytes(b"fixture-ciphertext")
+    runner = _FakeRunner(decrypt_document={"profile": DISTINCTIVE_VALUE})
+
+    exit_code = vault.main(["get", "profile"], runner=runner)
+
+    assert exit_code == 0
+    assert runner.calls == [["age", "-d", str(age_file_env)]]
+    # get is the one documented exception to never-print-values: stdout is
+    # exactly the raw value plus one newline, nothing else.
+    assert capsys.readouterr().out == DISTINCTIVE_VALUE + "\n"
+
+
+def test_get_missing_item_refuses_value_free(age_file_env, capsys):
+    age_file_env.write_bytes(b"fixture-ciphertext")
+    runner = _FakeRunner(decrypt_document={"other": DISTINCTIVE_VALUE})
+
+    exit_code = vault.main(["get", "profile"], runner=runner)
+
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "REFUSED: item 'profile' not in the vault" in out
+    assert DISTINCTIVE_VALUE not in out
+
+
+def test_get_missing_vault_file_refuses_with_zero_runner_calls(age_file_env, capsys):
+    runner = _FakeRunner()
+
+    exit_code = vault.main(["get", "profile"], runner=runner)
+
+    assert exit_code == 1
+    assert runner.calls == []
+    assert "REFUSED: vault file not found" in capsys.readouterr().out
