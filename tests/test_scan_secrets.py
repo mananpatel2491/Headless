@@ -442,7 +442,7 @@ def test_masked_snippet_capped_at_200_characters():
 # 100 KB line, well past the Claude Code hook's 10 s timeout)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(os.environ.get("CI"), reason="in-process timing is flaky on shared CI runners")
+@pytest.mark.skipif(bool(os.environ.get("CI")), reason="in-process timing is flaky on shared CI runners")
 def test_large_lines_scan_through_all_patterns_quickly():
     random.seed(1234)
     dotted_200k = "a." * 100000  # ~200 KB, no "@"
@@ -456,7 +456,7 @@ def test_large_lines_scan_through_all_patterns_quickly():
         assert elapsed < 0.5, "scan took {0:.2f}s on a {1}-char line".format(elapsed, len(text))
 
 
-@pytest.mark.skipif(os.environ.get("CI"), reason="in-process timing is flaky on shared CI runners")
+@pytest.mark.skipif(bool(os.environ.get("CI")), reason="in-process timing is flaky on shared CI runners")
 def test_email_with_at_sign_on_large_line_scans_quickly():
     # Directly exercises the bounded quantifiers (not just the "@ not in
     # line" guard, which the two lines above never even reach): a large
@@ -716,7 +716,7 @@ def test_history_on_real_repo_is_clean():
     assert result.returncode == 0, result.stdout
 
 
-@pytest.mark.skipif(os.environ.get("CI"), reason="wall-clock timing is flaky on shared CI runners")
+@pytest.mark.skipif(bool(os.environ.get("CI")), reason="wall-clock timing is flaky on shared CI runners")
 def test_history_completes_within_time_budget():
     start = time.monotonic()
     result = subprocess.run(
