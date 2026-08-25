@@ -16,6 +16,8 @@ and what is open.
   code-ready but inactive: `gcloud` is not installed on this machine yet.
 - Tooling gaps: `pwsh` absent, so `../worktree.ps1` cannot run; create worktrees by hand at
   `../worktrees/Headless/<branch>` with `git worktree add`.
+- Commit safety gate active: `core.hooksPath=.githooks` must be set in every clone/worktree
+  (see README); CI scans full history on every push.
 
 ## Known site traps
 
