@@ -33,8 +33,10 @@ architecture map is `Project_Structure.md`.
 6. Verify: `python scripts/check_env.py`. The `git_hooks` row confirms step 5 took effect.
 7. Seed logins: `python scripts/probe.py https://<site> --apply` opens the Headless Chrome
    window - hidden at first, surfaced only at the "Your turn" prompt - so log in by hand once
-   there and press Enter. The profile persists under `HEADLESS_PROFILE_DIR`. Add `--show` to
-   keep the window visible throughout instead (useful the first time, to watch what happens).
+   there and press Enter. The profile persists under `HEADLESS_PROFILE_DIR`, including the
+   login itself, which now survives to later runs instead of needing to be seeded again every
+   time. Add `--show` to keep the window visible throughout instead (useful the first time, to
+   watch what happens).
 
 ## Running an errand
 
@@ -46,7 +48,8 @@ python scripts/<errand>.py --apply    # fill up to the handoff point, window hid
 python scripts/<errand>.py --show     # any mode, with the window visible from the start
 ```
 
-There is no submit flag. See `CLAUDE.md` for the rules that make this safe.
+The apply window no longer shows Chrome's "unsupported command-line flag: --no-sandbox"
+warning bar. There is no submit flag. See `CLAUDE.md` for the rules that make this safe.
 
 ## Public repo hygiene
 

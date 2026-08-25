@@ -22,7 +22,7 @@ below was made:
 - A Playwright `context.storage_state()` export taken at close, followed by
   `context.add_cookies(saved["cookies"])` after the next launch, does restore them: both a cookie
   set through `add_cookies` and one set by the page itself through `document.cookie` come back.
-- The Director's own profile (`~/.headless/chrome-profile/Default/Cookies`) after the UAT run
+- The Headless profile (`~/.headless/chrome-profile/Default/Cookies`) after the UAT run
   held 18 persistent tracking/CDN cookies for `.progressive.com` and zero cookies for any account
   host, consistent with the login's own cookies having been session cookies that Chrome purged on
   the next launch.
@@ -112,7 +112,12 @@ This is the evidence base for D1 through D6.
   failure and produces the same single note, rather than retrying entry-by-entry; the run
   proceeds with zero cookies imported for that session, the same outcome as if the file had never
   existed. An export that fails to write (for example, an unwritable profile directory) produces
-  the export-side note and the session still closes normally.
+  the export-side note and the session still closes normally. **Post-implementation addition
+  (Opus verifier, 2026-08-25, FIX-FIRST 1)**: when the state file existed but the import failed
+  (a malformed file, or `context.add_cookies()` rejecting the batch), the export that would
+  otherwise follow at the end of the same run is skipped entirely, so a transient import failure
+  can never overwrite a still-good, previously exported file with an empty one; the file is left
+  exactly as it was, with no extra note beyond the one the import already printed.
 - **Rationale**: a persistence feature exists to make a run smoother, never to make it more
   fragile than a run without it; every failure path here must degrade to exactly the behavior
   Headless already had before this feature existed (logged out, but working). Collapsing

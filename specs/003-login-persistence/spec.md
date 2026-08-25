@@ -166,7 +166,9 @@ cookie name or value.
 - **FR-003**: On every clean close of a launched-profile session, in every mode (preview, check,
   apply), the system MUST export the browser context's current cookies to the state file, writing
   only the entries that carry no expiry (session cookies); an entry that already carries an
-  expiry MUST NOT be written, because Chrome's own persistent profile already keeps it.
+  expiry MUST NOT be written, because Chrome's own persistent profile already keeps it, except
+  when an import from an existing state file failed in the same run, in which case the file is
+  left unchanged.
 - **FR-004**: Each export MUST replace the state file's entire previous content, not merge with
   it, so that a cookie a site has since cleared no longer appears in the file after the run that
   observed it gone.
@@ -186,8 +188,9 @@ cookie name or value.
   feature existed at all.
 - **FR-010**: No note or message produced by the import or export path MUST ever contain a cookie
   name or a cookie value, in any run, in any mode.
-- **FR-011**: `.gitignore` MUST exclude the state file's name so that a `HEADLESS_PROFILE_DIR`
-  pointed inside the repository does not risk it being committed.
+- **FR-011**: `.gitignore` MUST exclude the state file's name and its temporary-file variant so
+  that a `HEADLESS_PROFILE_DIR` pointed inside the repository does not risk either being
+  committed.
 - **FR-012**: The CDP-attach path (`HEADLESS_CDP_URL` set) MUST NOT read or write the state file
   under any circumstance; the Director's own Chrome manages its own sessions and this feature
   MUST NOT touch that browser's cookie jar in any way.

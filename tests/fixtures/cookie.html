@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Headless session-cookie test fixture</title>
+</head>
+<body>
+<h1>Session cookie fixture page</h1>
+<p>
+  Loading this page sets a session cookie (no expiry) via document.cookie,
+  scoped to whatever origin serves it. Used by the opt-in browser test
+  (HEADLESS_TEST_BROWSER=1, spec 003-login-persistence) to prove a
+  document.cookie session cookie survives a Session close and a fresh
+  relaunch on the same profile directory, with no real login-protected
+  site involved. This page must be served over http(s), never opened as
+  file://, or document.cookie has no real origin to scope the cookie to.
+</p>
+<script>
+  document.cookie = "sess=1; path=/";
+</script>
+</body>
+</html>

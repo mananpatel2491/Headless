@@ -69,3 +69,53 @@ def test_check_git_hooks_fail_when_git_missing(monkeypatch):
     status, hint = check_env._check_git_hooks()
     assert status == "FAIL"
     assert "git config core.hooksPath .githooks" in hint
+
+
+# --- T015 (spec 003-login-persistence): chromium_sandbox launch-kwargs -----
+
+
+class _FakeChromiumForBrowserCheck:
+    def __init__(self):
+        self.launch_calls: list[dict] = []
+
+    def launch(self, **kwargs):
+        self.launch_calls.append(kwargs)
+        return _FakeBrowserForBrowserCheck()
+
+
+class _FakeBrowserForBrowserCheck:
+    def close(self) -> None:
+        pass
+
+
+class _FakeSyncPlaywrightCtxForBrowserCheck:
+    """Stands in for what `sync_playwright()` returns, used as
+    `with sync_playwright() as p:` (the exact shape _check_browser() uses)."""
+
+    def __init__(self, playwright_obj):
+        self._playwright_obj = playwright_obj
+
+    def __enter__(self):
+        return self._playwright_obj
+
+    def __exit__(self, *exc_info):
+        return False
+
+
+def test_check_browser_passes_chromium_sandbox_true(monkeypatch):
+    fake_chromium = _FakeChromiumForBrowserCheck()
+
+    class _FakePlaywrightObj:
+        chromium = fake_chromium
+
+    fake_ctx = _FakeSyncPlaywrightCtxForBrowserCheck(_FakePlaywrightObj())
+    # _check_browser() imports sync_playwright locally from playwright.sync_api
+    # at call time, so patching the attribute on that module is the seam.
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", lambda: fake_ctx)
+
+    status, hint = check_env._check_browser()
+
+    assert status == "PASS"
+    assert hint == ""
+    assert len(fake_chromium.launch_calls) == 1
+    assert fake_chromium.launch_calls[0]["chromium_sandbox"] is True

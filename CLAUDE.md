@@ -72,6 +72,10 @@ run repetitive work-portal chores.
   itself renders (a logged-in portal shows the Director's name), so `previews/` is
   vault-grade local data: gitignored, never shared or attached anywhere, disposable, and
   skippable with `--no-screenshot`.
+- The profile directory's `session-cookies.json` (launched-profile path only) holds
+  plaintext cookie values with the same vault-grade classification as the rest of that
+  directory: gitignored, never printed, never committed. A cookie name or value never
+  appears in a note, an exception message, or any preview artifact.
 
 ### Browser
 - Headless is invisible by default: preview and check run in Chrome's headless mode on the
@@ -84,6 +88,10 @@ run repetitive work-portal chores.
   selector, the model receives the page and the field names, never the values.
 - When attaching over CDP (`HEADLESS_CDP_URL`), attach only to a Chrome started for
   Headless; the attached context carries every session that browser holds.
+- On the launched-profile path only, the profile directory also holds a plaintext
+  session-cookie file (`session-cookies.json`) that lets a seeded login survive to the
+  next run; it stays vault-grade like the rest of the profile directory (never printed,
+  never committed) and the CDP-attach path never reads or writes it.
 
 ### Working style
 - **80/20 Surgical Strike**: most of a session is read-only planning; one testable change per

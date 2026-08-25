@@ -14,8 +14,12 @@ argparse and all, for preview and check).
 
 from __future__ import annotations
 
+import functools
+import http.server
 import json
 import os
+import threading
+from pathlib import Path
 
 import pytest
 
@@ -288,3 +292,64 @@ def test_errand_run_end_to_end_check(tmp_path, wired_vault, fixture_form_url, mo
     assert checks["#does-not-exist"] is False
     for selector in ("#full_name", "#pan", "#email", "#form_type"):
         assert checks[selector] is True
+
+
+# --- T012 (spec 003-login-persistence): a document.cookie session cookie ---
+# --- survives a Session close and a fresh relaunch on the same profile -----
+
+
+class _QuietRequestHandler(http.server.SimpleHTTPRequestHandler):
+    """SimpleHTTPRequestHandler, minus the per-request stderr log line."""
+
+    def log_message(self, format, *args):  # noqa: A002 - matches base signature
+        pass
+
+
+@pytest.fixture
+def local_fixture_server():
+    """A 127.0.0.1 http.server thread serving tests/fixtures/, so
+    document.cookie can set a cookie scoped to a real origin the way
+    file:// cannot (research.md D6). No public network involved."""
+    directory = str(Path(__file__).resolve().parent / "fixtures")
+    handler = functools.partial(_QuietRequestHandler, directory=directory)
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    finally:
+        httpd.shutdown()
+        thread.join(timeout=5)
+
+
+def test_session_cookie_persists_across_relaunch_on_same_profile(tmp_path, local_fixture_server):
+    """SC-001, SC-007, quickstart Scenario 5: seed a document.cookie session
+    cookie by navigating a launched-profile Session to a local fixture page,
+    close it, relaunch a second Session on the same profile directory, and
+    confirm the cookie is present before any navigation on the second
+    launch - the real-browser proof behind the fake-object tests in
+    tests/test_session.py."""
+    profile_dir = tmp_path / "chrome-profile"
+    config = Config(
+        profile_dir=profile_dir,
+        headed=False,
+        cdp_url=None,
+        secrets_backend="keychain",
+        keychain_account="headless-test-unused",
+        gcp_project=None,
+        preview_dir=tmp_path / "previews",
+    )
+    cookie_url = f"{local_fixture_server}/cookie.html"
+
+    with Session(config, Mode.PREVIEW) as session:
+        session.goto(cookie_url)
+        cookies_at_close = {c["name"]: c for c in session.context.cookies()}
+
+    assert "sess" in cookies_at_close
+    assert cookies_at_close["sess"]["expires"] == -1
+
+    with Session(config, Mode.PREVIEW) as session:
+        cookies_after_relaunch = {c["name"]: c for c in session.context.cookies()}
+
+    assert "sess" in cookies_after_relaunch
+    assert cookies_after_relaunch["sess"]["value"] == "1"
