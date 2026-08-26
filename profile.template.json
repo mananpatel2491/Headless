@@ -1,0 +1,83 @@
+{
+  "_note": "Template for the 'profile' vault item (the structure the code expects). Copy this shape, replace every synthetic value with your real one, then store it: python scripts/vault.py get profile -> edit in your editor -> python scripts/vault.py set profile. Arrays: every element carries a 'type' field, unique within its array - registry paths address elements by it (identities.self.first_name, vehicles.primary.currently_insured). Each insured asset's 'policy_doc' points at the PDF of the policy currently covering it; Headless extracts the coverage lines from that PDF (you confirm the extraction once) - current-policy data is never hand-typed into this document. 'feature_configs' holds per-feature settings (insurance.companies = which insurers to fetch quotes from). Never commit real values; this file stays synthetic. Policy: no passwords and no payment card data, in any field.",
+  "identities": [
+    {
+      "type": "self",
+      "first_name": "Test",
+      "last_name": "Testerson",
+      "dob": "1990-01-31",
+      "email": "director@example.com",
+      "phone": "555-0100",
+      "licence": {
+        "number": "T555-0000-0000",
+        "state": "MI"
+      }
+    },
+    {
+      "type": "spouse",
+      "first_name": "Spouse",
+      "last_name": "Testerson",
+      "dob": "1991-02-28",
+      "email": "director@example.com",
+      "phone": "555-0101",
+      "licence": {
+        "number": "T555-0000-0001",
+        "state": "MI"
+      }
+    }
+  ],
+  "addresses": [
+    {
+      "type": "home",
+      "line1": "1 Example Street",
+      "city": "Example City",
+      "state": "MI",
+      "zip": "48000",
+      "dwelling_type": "single_family",
+      "currently_insured": "yes",
+      "policy_doc": "/path/to/current-home-policy.pdf"
+    },
+    {
+      "type": "rental",
+      "line1": "2 Example Street",
+      "city": "Example City",
+      "state": "MI",
+      "zip": "48000",
+      "dwelling_type": "single_family",
+      "currently_insured": "yes",
+      "policy_doc": "/path/to/current-rental-policy.pdf"
+    },
+    {
+      "type": "work",
+      "line1": "2 Example Street",
+      "city": "Example City",
+      "state": "MI",
+      "zip": "48000",
+      "dwelling_type": "commercial",
+      "currently_insured": "n/a",
+      "policy_doc": "n/a"
+    }
+  ],
+  "vehicles": [
+    {
+      "type": "primary",
+      "vin": "1HGCM82633A004352",
+      "year": "2022",
+      "make": "Honda",
+      "model": "CR-V",
+      "currently_insured": "yes",
+      "policy_doc": "/path/to/current-auto-policy.pdf"
+    }
+  ],
+  "feature_configs": {
+    "insurance": {
+      "companies": [
+        "progressive",
+        "geico",
+        "statefarm",
+        "aaa",
+        "allstate"
+      ]
+    }
+  }
+}
