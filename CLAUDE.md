@@ -76,6 +76,30 @@ run repetitive work-portal chores.
 - No backend - `age`, Keychain, or GCP - ever stores a password or a payment card value. A
   login persists through the session-cookie mechanism above instead of a stored password, and
   any payment action stays human-only per the Browser section's terminal-actions rule.
+- **Insurance quote comparison** (v0.0.5, spec 005-insurance-quote-comparison). The list of
+  insurers to compare (`feature_configs.insurance.companies`) lives inside the Director's
+  existing `profile` vault item, not a separate item - a JSON array of insurer id strings read
+  by a direct document parse (the registry itself refuses any dotted path that ends on a list).
+  There is no `current_policy` field anywhere in `profile`, and none is ever planned: each
+  insured asset (an `addresses[]`/`vehicles[]` element) carries its own `policy_doc` field, a
+  filesystem path to that asset's real policy PDF; `scripts/policy_extract.py` turns it into a
+  confirmed reference via deterministic heuristics (`pypdf`, never an LLM) plus mandatory
+  Director confirmation, cached under `reports/policy/<asset-key>.json`. `reports/` (both
+  `captures/` and the rendered comparison report) carries the same vault-grade local-data
+  classification `previews/` already does - gitignored, never committed, shared, or attached
+  anywhere, since a capture or a report can hold a real premium, a real coverage limit, and
+  implicitly the Director's own insurability profile.
+- **Value-free-output exceptions** (three, each scoped identically: one interactive,
+  Director-invoked terminal command, reviewing his own data on his own terminal, never written
+  to a log, a preview artifact, or a report, and never called from any errand's automated code
+  path). `scripts/vault.py get NAME` (v0.0.4.1) prints item `NAME`'s raw value to stdout after
+  the passphrase-gated decrypt - the fetch half of the `get` -> edit -> `set` round trip.
+  `scripts/vault.py verify` (v0.0.4.2) never prints a value itself (its findings are
+  value-free `SEVERITY path: reason` lines), but is the structural-validation companion to
+  `get`'s own round trip. `scripts/policy_extract.py` (v0.0.5) prints an extraction candidate
+  to the Director's own terminal before caching it - his own policy data, reviewed before it
+  can ever become a comparison figure. Every other output the vault CLI or any errand produces
+  continues printing zero values.
 - A script may type a value into a site only if that value exists in the profile registry.
   Nothing an LLM derives is ever typed. (Same rule as the hand-authored `PROPOSALS` registry
   in the Director's Atlassian toolkit, applied to forms.)

@@ -753,6 +753,86 @@ should be treated as this delivery's shipped shape.**
   authorized to redesign to work around an unrelated terminal limit - the correct fix is the one
   `main` already shipped, a pipe, not a smaller document).
 
+## Recon results (implementation-time, 2026-08-26, T022)
+
+Three headless, scratch-Chrome-profile walks against the real Progressive site, exactly at D8's
+own bound. Every walk used a fresh `tempfile.mkdtemp()` profile directory (never
+`~/.headless/`), wholly synthetic ZIP data (`"48000"`, never the Director's real identity,
+address, date of birth, or licence data), never clicked a purchase, submit, or payment control,
+closed its own browser context in a `finally` block, and completed well inside the 120-second
+per-walk bound (elapsed times: walk 1 aborted after roughly 20s on a navigation-wait timeout that
+turned out to be the wrong technique, not a site block; walk 2 ran about 26s; walk 3, the
+decisive one, ran about 14s). All three scratch profile directories were deleted after the
+session; no orphan Chrome process was left running (`ps aux` checked clean afterward).
+
+- **Walk 1**: confirmed the landing page loads under headless Chrome (title "Car Insurance: Get
+  a Quick Auto Insurance Quote | Progressive") and both `#zipCode_mma` and `#qsButton_mma`
+  resolve (`.count() == 1` each) - the same two selectors already verified before this feature
+  was scoped. Attempted `page.expect_navigation()` around the quote-start click; that specific
+  Playwright API raised a `TimeoutError` after 20s. This was a technique problem (waiting for a
+  full-page navigation event that a single-page-app-style form submission may not fire), not yet
+  evidence of a site-level block - recorded honestly as inconclusive, not folded into the
+  refusal finding below.
+- **Walk 2**: same landing page, same fill, this time submitted via a direct `.click()` with no
+  `expect_navigation()` wrapper, followed by an explicit 20-second poll loop for a URL change
+  plus a `wait_for_load_state`. The ZIP field's own value confirmed set (`input_value() ==
+  "48000"`) and no error text appeared on the input (`#stopError_mma` empty). After the click,
+  the page's URL and title were unchanged (`https://www.progressive.com/auto/`, the same landing
+  title) - no navigation occurred within the wait window. The page's own DOM at this point
+  still showed 182 form controls, all landing-page ones (product/bundle selector buttons, the
+  quick-quote form's hidden fields, FAQ accordions) - nothing resembling a second page's content.
+- **Walk 3**: the decisive walk, adding console-message capture and three different submission
+  techniques against the same landing page and the same synthetic ZIP fill, each observed for a
+  few seconds: (1) a direct `.click()` on `#qsButton_mma`; (2) clicking into the ZIP field and
+  pressing `Enter`; (3) a JS-dispatched `document.querySelector('#qsButton_mma').click()`. All
+  three produced the identical outcome: the page's URL and title never changed away from the
+  landing page, and the browser console logged exactly three `error: Failed to load resource:
+  the server responded with a status of 403 (Forbidden)` messages immediately after the first
+  submission attempt (walk 3's own console listener was attached from page load, so these are
+  attributable to the click, not to the landing page's own initial load, which produced zero
+  console errors before the click). The same three 403s appeared once, not once per attempted
+  technique - consistent with the first submission attempt being the one Progressive's own
+  backend refused, with the follow-up techniques never getting a different outcome because the
+  underlying request the button's own handler makes is what is being blocked, regardless of how
+  the click itself is triggered.
+
+**Finding**: Progressive's own quote-start submission returns HTTP 403 to at least one of the
+resources the click's own handler requests, specifically under Chrome's headless rendering mode
+(`headless=True`), and the page never advances past the landing page as a result - confirmed
+identically across three different ways of triggering the same button, in two independent walks
+(2 and 3). This is direct, repeatable evidence for this repository's standing
+headless-user-agent question (`PATTERNS.md`'s "Quiet by default" entry, which already recorded
+that this Chrome reports `HeadlessChrome` in its own `navigator.userAgent`): a real site
+distinguishing and refusing headless traffic at the point of an actual form submission, not just
+a theoretical fingerprinting risk. **What this finding does NOT establish**: whether a real
+`--apply` run - which always launches a real, non-headless windowed Chrome (`headed=True`) per
+`CLAUDE.md`'s "quiet by default" rule, not Chrome's headless rendering mode - would hit the same
+block. D8's own recon authorization is headless-only by design (a scratch profile under headless
+Chrome, never the Director's real seeded profile or a real window), so this delivery has no
+evidence either way for the apply-mode case; it is recorded here as an open, unresolved question
+for the Director's own first real `--apply` attempt (quickstart Scenario 5) to answer.
+
+**No page past the landing page was ever reached** in any of the three walks - not a
+consent screen, not a phone-verification step, not a currently-insured question, not a
+coverage-tier page, not a quote page. Consequently: no `HumanStep` bridges anything in the
+shipped walk (there is no known "next step" recon ever identified to bridge - a `HumanStep`
+would need real content to instruct the Director toward, and none exists); `FR-035`'s
+`vehicles.primary.currently_insured` `FieldPlan` is never wired in this delivery, because recon
+never found the "are you currently insured?" question FR-035 conditions its own wiring on;
+`QuoteCapture.package` is never populated by a real capture in this delivery, because no
+multi-tier coverage page was ever reached to observe a default selection (or its absence) on.
+The shipped Progressive walk (`headless/insurers/progressive.py`) therefore ships exactly the
+two selectors already verified before this feature was scoped - `FieldPlan` on `#zipCode_mma`,
+`ClickStep` on `#qsButton_mma` - and nothing more (FR-032, FR-034). See `MEMORY.md`'s "Known
+site traps" table for the same finding recorded as a dated operating-ledger entry.
+
+**Orchestrator accepted 2026-08-26 (NIT 11, Opus verifier)**: this walk ships with no `HumanStep`
+of its own - the errand's own trailing `HANDOFF` text serves as the bridge in this degenerate
+landing-only case (FR-034's own amended clause), since recon never identified a further page for
+a `HumanStep` to meaningfully instruct the Director toward, and an explicit `HumanStep` immediately
+followed by the same trailing handoff would only double-prompt the Director for the one thing the
+`HANDOFF` text already says.
+
 ## D18. Comparison arithmetic: deterministic `Decimal` parsing and normalization for amounts, limits, and deductibles (ORCHESTRATOR DECISION, 2026-08-25)
 
 - **Decision**: FR-016/FR-018/FR-046 previously left "normalized premium" and "better/worse"

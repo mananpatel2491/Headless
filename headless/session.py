@@ -50,6 +50,15 @@ Every Chrome process this codebase launches also passes
 `chromium_sandbox=True` (D7): Playwright adds `--no-sandbox` to every launch
 unless this exact option is passed, which is what produced the "unsupported
 command-line flag" warning bar the Director saw at the apply handoff.
+
+Walk framework (v0.0.5, spec 005-insurance-quote-comparison): `click` and
+`capture` are the two new page operations the walk framework's `ClickStep`/
+`CaptureStep` dispatch through. `click` mirrors `fill`'s apply-only,
+no-retry contract exactly and wraps any locator exception into
+`ClickFailed` (alongside `FillFailed`, no value to redact - a click carries
+no typed value). `capture` mirrors `probe`'s read-only shape: a missing
+selector never raises, it yields an empty string plus one value-free note
+and the call continues with the remaining extractors.
 """
 
 from __future__ import annotations
@@ -209,6 +218,24 @@ def _should_hide_window(mode: Mode, config: Config) -> bool:
     (headless=True) or fully visible via --show; neither has a handoff to
     restore at."""
     return mode is Mode.APPLY and _effective_headed(mode, config) and not config.show
+
+
+class ClickFailed(RuntimeError):
+    """Session.click's locator action raised (data-model.md, spec FR-002).
+
+    Mirrors FillFailed's shape: the message is built only from structural
+    information (the step's own name and selector, plus the caught
+    exception's class name) - never the underlying Playwright exception or
+    its message, which can embed page content. A click carries no typed
+    value, so unlike FillFailed there is nothing to redact() here.
+    """
+
+    def __init__(self, step_name: str, selector: str, cause: BaseException) -> None:
+        self.step_name = step_name
+        self.selector = selector
+        self.cause_class = type(cause).__name__
+        message = f"click failed for {step_name!r} ({selector!r}): cause={self.cause_class}"
+        super().__init__(message)
 
 
 class FillFailed(RuntimeError):
@@ -405,6 +432,61 @@ class Session:
             # let that object or its message propagate; re-raise a FillFailed
             # built only from redacted, structural information.
             raise FillFailed(plan, value, exc) from None
+
+    def click(self, selector: str, step_name: str | None = None) -> None:
+        """The walk framework's ClickStep dispatch (data-model.md, spec
+        FR-002). Apply-mode only, no retry on failure - mirrors `fill`'s own
+        guard and its "writes never retry" convention exactly.
+
+        `step_name` is an optional second argument beyond
+        contracts/walk-capture-report.md section 2's literal
+        `Session.click(selector: str) -> None` signature, so a caller with
+        just a selector still matches that contract; `Errand.run()`'s own
+        dispatch loop passes the ClickStep's own `.name` so a raised
+        `ClickFailed` can name the step being executed the same way
+        `FillFailed` already names its own `FieldPlan.name` (data-model.md's
+        `ClickFailed` field table). Defaults to the selector itself when no
+        step name is supplied.
+        """
+        if self.mode is not Mode.APPLY:
+            raise GateRefused("click is only permitted in apply mode")
+        name = step_name if step_name is not None else selector
+        locator = self.page.locator(selector)
+        try:
+            locator.click()
+        except Exception as exc:
+            raise ClickFailed(name, selector, exc) from None
+
+    def capture(self, extractors: dict[str, str]) -> dict[str, str]:
+        """The walk framework's CaptureStep dispatch (data-model.md, spec
+        FR-005). Read-only, mirroring `probe`'s own read-only shape: for each
+        `(field_key, selector)` pair, a resolving selector's stripped text
+        becomes that field's value; a selector that does not resolve yields
+        an empty string plus exactly one value-free note, and every other
+        extractor in the same call still runs regardless (SC-009). Never
+        raises for a missing selector - only for something outside its own
+        control (the page itself closed or crashed), which `errand.py`'s
+        existing post-session generic handler already covers.
+
+        Reads via `locator.first` rather than the bare locator (NIT 10,
+        Opus verifier, 2026-08-26): a selector matching more than one
+        element is a Playwright strict-mode violation on the bare
+        `.text_content()` call, which would abort this one extractor - and,
+        before this fix, the whole method, since the exception was
+        uncaught here. `.first` degrades a multi-match extractor to "read
+        the first match" instead, the same fail-soft posture every other
+        branch in this method already has for an imperfect selector.
+        """
+        result: dict[str, str] = {}
+        for field_key, selector in extractors.items():
+            locator = self.page.locator(selector)
+            if locator.count() > 0:
+                text = locator.first.text_content()
+                result[field_key] = (text or "").strip()
+            else:
+                result[field_key] = ""
+                print(f"note: capture field {field_key!r} not found (selector missing)")
+        return result
 
     def screenshot(self) -> bytes | None:
         try:

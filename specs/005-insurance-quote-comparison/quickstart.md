@@ -147,19 +147,29 @@ python scripts/quote_compare.py
 
 Expected: no window opens (default, invisible preview, same as every prior errand). For
 `progressive`, a preview artifact under `previews/` showing the ZIP field's masked value (resolved
-from `registry:addresses.home.zip`) and every other declared step (the landing click, any
-`HumanStep`s and the `CaptureStep` the implementation delivery's recon actually proved) listed by
-name only - no navigation past the landing page happens (spec SC-001). A summary line states which
-`feature_configs.insurance.companies` entries are unmapped, if any. No capture is written and no
-report is written in preview mode.
+from `registry:addresses.home.zip`) and the landing-page `ClickStep` listed by name only - no
+navigation past the landing page happens (spec SC-001). **This delivery's own shipped walk is
+exactly these two steps and nothing more**: implementation-time recon (research.md D8's own "Recon
+results" section) found Progressive's quote-start submission returns HTTP 403 under headless
+Chrome and never reaches a further page, so no `HumanStep` and no `CaptureStep` ships in this
+delivery - there is nothing past the landing click for the preview artifact to list. A summary
+line states which `feature_configs.insurance.companies` entries are unmapped, if any. No capture is
+written and no report is written in preview mode.
 
-## Scenario 5: the real apply run - the passphrase gate, the HumanStep etiquette, the capture (US1, US2, US3)
+## Scenario 5: the real apply run - what actually happens today (US1, US2, US3)
 
 ```bash
 python scripts/quote_compare.py --apply
 ```
 
-Expected sequence, in order:
+**Read this before running it**: this delivery's own shipped Progressive walk stops after the
+quote-start click. It does **not** cross a consent screen, does **not** answer a phone-verification
+step, does **not** reach a quote page, and does **not** produce a capture file - none of that is
+implemented yet, because implementation-time recon never got far enough to prove a single selector
+past the landing page (research.md's own "Recon results" section: Progressive's quote-start
+submission returned HTTP 403 across three different submission techniques, every time, under
+headless Chrome, with the page never navigating away from the landing page). Expected sequence, in
+order:
 
 1. One or more passphrase prompts (`profile`'s own read for `feature_configs.insurance.
    companies`, then a further prompt from Progressive's own `Errand.run()` internally resolving
@@ -167,32 +177,39 @@ Expected sequence, in order:
    this is not collapsed to a single prompt in this delivery).
 2. No visible window yet - Chrome launches hidden, as every apply run already does.
 3. The ZIP field fills and the quote-start button clicks, silently, with the window still hidden.
-4. At the first point recon determined cannot be automated, the window surfaces and the terminal
-   prints `Your turn: <instruction>` - read the instruction, complete that one step by hand in the
-   now-visible window (a consent click, a verification code, whatever recon found), then press
-   Enter in the terminal to continue. **Do this for every `HumanStep` the walk declares, in order**
-   - the walk resumes automatically after each Enter press.
-5. Once every `HumanStep` has been answered, the walk continues on its own to the quote page and
-   reads it - no further Director action needed until the trailing handoff.
-6. At the very end, one more `Your turn: <trailing HANDOFF text>` prompt - press Enter to finish.
-7. `reports/captures/progressive-<timestamp>.json` now exists, holding the captured premium and
-   coverage lines - never a full page dump, only the named extractor fields.
-8. `reports/quote-comparison-<date>.html` now exists - this is the deliverable.
+4. **This is where the shipped walk ends.** There is no `HumanStep` to answer and no further
+   automated step to wait for - the walk's own last step was the click in step 3. Immediately
+   after it, `Errand.run()`'s own trailing handoff fires: the window surfaces and the terminal
+   prints `Your turn: <HANDOFF text>`, an explanation that recon could not verify anything past
+   this click and that continuing the quote by hand in the now-visible window is optional, not
+   required - nothing further happens automatically either way. Press Enter to finish the run.
+5. **This is the open UAT question this scenario exists to answer**: recon's own 403 finding was
+   produced under Chrome's *headless* rendering mode, which this real `--apply` run does not use (a
+   real `--apply` always launches a real, non-headless windowed Chrome). Whether Progressive's own
+   quote-start submission also fails under a real headed window, or succeeds once a real browser is
+   involved, is unverified either way - record what actually happens (does the button's own click
+   visibly submit the form in the window, or does nothing happen there either) so a follow-up spec
+   mapping the post-landing selectors has real evidence to start from.
+6. No `reports/captures/progressive-<timestamp>.json` file is created by this run - there is no
+   `CaptureStep` in the shipped walk to produce one. This is expected, not a defect.
+7. `reports/quote-comparison-<date>.html` is still created (`scripts/quote_compare.py`'s own
+   report step runs regardless of whether any insurer produced a capture, FR-025) - open it
+   per Scenario 6 below to see what it says with zero data.
 
-**Watch for**: a `note: capture field '<name>' not found (selector missing)` line during step 5 -
-not a failure; one coverage line's selector did not resolve on the quote page this time, and the
-comparison engine will show that line as missing for this quote rather than guessing a value.
-
-## Scenario 6: opening the report (US3)
+## Scenario 6: opening the report today (zero captures on file) (US3)
 
 Open `reports/quote-comparison-<date>.html` directly in a browser - no server, no network
-connection needed. Expected: a table with the current-policy reference's own column (or, if
-Scenario 8 has not yet been run for `vehicles.primary`, a "no current-policy reference for
-vehicles.primary - run scripts/policy_extract.py" marker in that column) plus one column per
-successfully captured quote, each coverage-line cell marked better/worse/missing/equal (when a
-confirmed reference exists) or shown unclassified (when it does not), a premium row, a
-recommendation banner naming the top-ranked quote and the rule that produced it, one row for any
-unmapped insurer, and a footer naming each included quote's capture timestamp and source URL.
+connection needed. Expected, for as long as no capture file exists for `progressive` (true for
+every run of this delivery's own shipped walk, per Scenario 5 above): the current-policy column
+either shows real figures (if Scenario 8 has already been run for `vehicles.primary`) or the "no
+current-policy reference for vehicles.primary - run scripts/policy_extract.py" marker; `progressive`
+appears as a **failed insurer row** stating only "no successful capture yet" (the fixed, value-free
+phrase FR-024/section 5 item 5 define - never a stack trace, never an exit code); the recommendation
+banner reads "No comparison exists yet - no capture is on file for any mapped insurer" (`Comparison
+Result.recommended is None`, since there is nothing to rank); and any unmapped insurer still gets
+its own "not mapped yet" row. This is the correct, expected shape of the report until a follow-up
+spec maps Progressive's own post-landing selectors (or a second insurer's walk ships one) and a real
+capture file exists - it is not a rendering bug.
 
 ## Scenario 7: one insurer's failure does not stop the others (US4)
 
@@ -230,8 +247,12 @@ exception `vault.py get` already established. Review it against your actual poli
 no candidate, no prompt, no note (spec FR-062).
 
 Re-run `scripts/quote_compare.py --apply` (Scenario 5) afterward and re-open the report (Scenario
-6): the current-policy column now shows real figures and real classifications instead of the "no
-current-policy reference" marker.
+6): the current-policy column now shows real figures - its own raw premium labelled with its own
+term, plus its monthly-equivalent figure alongside (FIX-FIRST 4) - instead of the "no
+current-policy reference" marker. `progressive` itself still shows as a "no successful capture yet"
+row until a follow-up spec maps its own post-landing selectors (Scenario 5's own open question):
+a confirmed current-policy reference and a captured quote are two independent things, and this
+delivery only ships the mechanism for the first one end to end.
 
 ## Scenario 9: the excluded-asset case (US3, US4)
 

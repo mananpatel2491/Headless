@@ -173,8 +173,13 @@ One self-contained HTML document, in this section order:
    appears in `current_policy` or in any ranked quote (a line only a captured quote has, that
    `current_policy` lacks, still gets its own row - "missing" only ever describes a captured
    quote's cell, never `current_policy`'s own); the premium row shows each quote's
-   `normalized_premium` alongside `current_policy`'s own raw `premium.amount` (already at its own
-   term length by definition); every ranked quote's cells carry a better/worse/missing/equal mark.
+   `normalized_premium` alongside `current_policy`'s own raw `premium.amount` **labelled with its
+   own `premium.term_months`** (e.g. `"$600.00 per 6 months"`) **plus its own monthly-equivalent
+   figure computed by the same FR-067(a)/(b) rules every quote's own `normalized_premium` already
+   uses** (`headless/compare.py`'s `current_premium_label`, FIX-FIRST 4, Opus verifier
+   2026-08-26) - a raw N-month figure never sits unlabelled beside a monthly one, which would
+   otherwise read as though the two were already the same unit; every ranked quote's cells carry a
+   better/worse/missing/equal mark.
    When `has_current_policy` is `False` (FR-047): the `current_policy` column's every row renders
    the fixed marker "no current policy on file" instead of a value; every coverage line that
    appears in any ranked quote still gets its own row, but no cell in any quote's own column
@@ -225,9 +230,12 @@ alone cannot support (`set` only ever writes a new value; it has no way to show 
 is there now to edit). No code under `headless/` calls `get`'s underlying function; it is reachable
 only from `scripts/vault.py`'s own CLI (spec SC-014).
 
-**This worktree's own gap**: `v0.0.5` forked from `main` before v0.0.4.1 landed, so `vault.py get`
-does not run inside this specific worktree yet. See quickstart.md's own caution on this point
-before attempting the round-trip scenario there.
+**Worktree gap CLOSED (2026-08-26, NIT 9)**: `v0.0.5` originally forked from `main` before
+v0.0.4.1 landed, so `vault.py get` did not run inside this specific worktree at spec-authoring
+time. `main` (carrying v0.0.4.1 through v0.0.4.4 and `profile.template.json`) was merged into this
+worktree before implementation began (`1b0a7b8`), so `vault.py get` has run inside this worktree
+from the start of implementation onward - the gap this section originally documented no longer
+applies here.
 
 ## 7. `ProfileRegistry.get`: type-discriminated array addressing
 
@@ -265,7 +273,7 @@ vault, a browser, or prompts for a passphrase.
 
 | Property | Value |
 | :--- | :--- |
-| File | `profile.template.json`, repository root - already exists on `main` (Amendment 5), not yet in this worktree |
+| File | `profile.template.json`, repository root - already exists on `main` (Amendment 5); present in this worktree since `main` was merged in (`1b0a7b8`), before implementation began (NIT 9, 2026-08-26) |
 | Content | Wholly synthetic values, in the exact `identities`/`addresses`/`vehicles`/`feature_configs` shape spec.md's Assumptions section describes (no `current_policy` field anywhere - D3, revised twice) |
 | Test | Loads the file directly (`json.load`, a plain file read - no vault, no `get_secret`, no passphrase prompt); resolves every registry path any shipped walk in this delivery references (the Progressive walk's full field list, including `vehicles.primary.currently_insured`) through `ProfileRegistry.get`, exercising section 7's own array-addressing rule |
 | On a path that fails to resolve | The test fails - this is the drift guard: a walk change referencing a field the template does not define cannot pass the suite |
@@ -338,6 +346,8 @@ shape (D14) is 1235+ characters as raw JSON - past that boundary by construction
 unusual editing choice - so spec 005's own quickstart profile-editing round trip (Scenario 1) MUST
 use the piped path, never the interactive one, for `set profile`.
 
-**This worktree's own gap**: `v0.0.5` forked from `main` before v0.0.4.3/v0.0.4.4 landed, so
-neither the piped-stdin acceptance nor the 1024-character refusal runs inside this specific
-worktree yet - the same gap section 6 already documents for `get`.
+**Worktree gap CLOSED (2026-08-26, NIT 9)**: `v0.0.5` originally forked from `main` before
+v0.0.4.3/v0.0.4.4 landed, so neither the piped-stdin acceptance nor the 1024-character refusal ran
+inside this specific worktree at spec-authoring time. `main` was merged into this worktree before
+implementation began (`1b0a7b8`) - both behaviors have run inside this worktree from the start of
+implementation onward, the same closure section 6 records for `get`.

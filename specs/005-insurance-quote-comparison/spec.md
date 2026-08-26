@@ -571,6 +571,16 @@ masked plan and states `geico` has no registered walk, with zero browser activit
   implementation-time recon, that refusal MUST be recorded as evidence in research.md for the
   repository's standing headless-user-agent question, and the walk MUST still ship whatever depth
   recon actually proved, bridging the rest with `HumanStep`s rather than being withheld entirely.
+  **Accepted deviation (2026-08-26, orchestrator decision, Opus verifier NIT 11)**: when the
+  walk's last recon-proven step is already the walk's own final step - recon found no further page
+  to describe, so there is no known "next step" a `HumanStep` could meaningfully instruct the
+  Director toward - the errand's own trailing `self.HANDOFF` text MAY serve as that bridge instead
+  of an explicit mid-walk `HumanStep`, provided its own text states plainly what recon could not
+  verify and that continuing by hand is optional, not required. A mid-walk `HumanStep` remains
+  mandatory whenever recon *does* identify a further page or step it could not automate; this
+  clause narrows only the degenerate case where nothing further was ever found to bridge to (see
+  `headless/insurers/progressive.py` and research.md's own "Recon results" section for the
+  concrete instance this clause was written to cover).
 - **FR-035**: Where implementation-time recon (FR-032) finds an "are you currently insured?"
   question on a page the Progressive walk reaches, the walk MUST fill or select it from
   `registry:vehicles.primary.currently_insured` (a `FieldPlan` of kind `select` or `check`,
@@ -600,9 +610,11 @@ prompt, the piped-stdin path and the 1024-character refusal shipped as hotfix v0
 `a7e2e48`), and the prompt's own pipe-command hint shipped as hotfix v0.0.4.4 (merge `d55bc80`).
 FR-037 through FR-039c below record all four contracts as already-shipped fact, because spec 005's
 own quickstart (below) uses every one of them in the profile-editing and validation workflow - none
-is new work for `/speckit-implement` to build. This worktree's own `v0.0.5` branch does not yet
-contain any of the four hotfixes (it forked before all of them landed); see research.md D12 and
-D17 for how that gap is expected to close.
+is new work for `/speckit-implement` to build. This worktree's own `v0.0.5` branch originally
+forked before all four hotfixes landed; that gap CLOSED on 2026-08-26 (NIT 9, Opus verifier), when
+`main` (carrying all four, plus `profile.template.json`) was merged into this worktree before
+implementation began (`1b0a7b8`) - see research.md D12 and D17 for the decision trail this
+closure resolves.
 
 - **FR-037**: `scripts/vault.py` provides a `get NAME` subcommand that decrypts the vault (one
   passphrase prompt) and prints only the raw string value of item `NAME` to stdout, followed by a
@@ -642,8 +654,9 @@ D17 for how that gap is expected to close.
   scripts/vault.py set profile`; Windows: `Get-Clipboard | python scripts\vault.py set profile`),
   which has no such limit, and the interactive prompt itself prints the pipe-command hint before
   asking for a value, not only after a refusal. Shipped alongside `get`/`verify`, as hotfixes
-  v0.0.4.3 and v0.0.4.4 (`main`, not yet in this worktree), and also recorded rather than built by
-  this delivery (research.md D17) - `profile.template.json`'s own shape is 1235+ characters as raw
+  v0.0.4.3 and v0.0.4.4 (`main`; present in this worktree since the 2026-08-26 merge, NIT 9), and
+  also recorded rather than built by this delivery (research.md D17) - `profile.template.json`'s
+  own shape is 1235+ characters as raw
   JSON, past the 1024-character boundary by construction, so spec 005's own quickstart profile-
   editing round trip depends on this piped path working, not the hidden-prompt path.
 
@@ -1006,11 +1019,12 @@ insurance feature reading any asset's data MUST honor it the same way this deliv
 - `reports/` is a new top-level directory, sibling to `previews/`, created on first use exactly
   the way `previews/` already is - no setup step, no migration.
 - `profile.template.json` and `scripts/vault.py get` both already exist on `main`, ahead of and
-  independent of this delivery (research.md D12 and D14); this worktree's own `v0.0.5` branch,
-  forked before either landed, does not yet contain them. Neither gap is something this
-  spec-authoring delivery is authorized to close (no merge, no pull, per its own brief) - both are
-  recorded as known, expected gaps this specific worktree carries until it merges forward from, or
-  is rebased onto, current `main`.
+  independent of this delivery (research.md D12 and D14). This worktree's own `v0.0.5` branch
+  originally forked before either landed and did not contain them at spec-authoring time - closing
+  that gap was explicitly outside the spec-authoring delivery's own brief (no merge, no pull). The
+  gap itself CLOSED on 2026-08-26 (NIT 9, Opus verifier), before implementation began: `main`
+  (carrying both, plus every other v0.0.4.x hotfix) was merged into this worktree at `1b0a7b8`, so
+  the implementation delivery's own work proceeded with both already present.
 
 ## Out of Scope
 

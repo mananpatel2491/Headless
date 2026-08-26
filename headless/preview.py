@@ -29,6 +29,7 @@ class PreviewRecord:
     handoff: str
     fields: list[dict] = field(default_factory=list)
     checks: list[dict] = field(default_factory=list)
+    steps: list[dict] = field(default_factory=list)
     timestamp_utc: str = field(default_factory=_utc_timestamp)
 
     def __post_init__(self) -> None:
@@ -47,6 +48,15 @@ class PreviewRecord:
             )
         self.fields = masked_fields
         self.checks = [{"selector": c["selector"], "found": bool(c["found"])} for c in self.checks]
+        # Walk framework (v0.0.5): steps holds only {"kind", "name"} entries
+        # for non-FieldPlan steps (ClickStep/HumanStep/CaptureStep) - never
+        # a selector, an instruction string, or an extractor mapping. A
+        # HumanStep's own instruction text is deliberately withheld here
+        # even though a FieldPlan's selector is already recorded in clear
+        # text elsewhere: an instruction could describe what a page shows in
+        # enough detail to leak page content into a persisted file, so
+        # name-only is the safer default (data-model.md).
+        self.steps = [{"kind": s["kind"], "name": s["name"]} for s in self.steps]
 
     def to_json(self) -> str:
         payload = {
@@ -58,6 +68,7 @@ class PreviewRecord:
             "handoff": self.handoff,
             "fields": self.fields,
             "checks": self.checks,
+            "steps": self.steps,
         }
         return json.dumps(payload, indent=2)
 

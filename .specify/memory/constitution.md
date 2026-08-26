@@ -42,6 +42,19 @@ Sync Impact Report
   (no caching of any kind - the passphrase never enters Python), and a new explicit rule:
   no backend ever stores a password or a payment card value. `terraform/README.md`
   records the GCP Secret Manager plan as superseded, not deleted. Templates unchanged.
+- 1.3.0 -> 1.3.1 (PATCH: wording only, extends existing hard rules' reach - no principle or
+  hard rule added, removed, or redefined): insurance quote comparison (specs/005-insurance-
+  quote-comparison). The Secrets Hard Rules bullet gains one sentence naming where the
+  insurer list lives (`profile.feature_configs.insurance.companies`, not a separate vault
+  item) and that there is no `current_policy` field anywhere in `profile` - each insured
+  asset's own `policy_doc` PDF is extracted and Director-confirmed instead, cached under
+  `reports/policy/`, itself inheriting `previews/`'s existing vault-grade classification (the
+  same reach extension `reports/`'s own captures and report already have). A second sentence
+  records the codebase's three documented, narrowly-scoped value-free-output exceptions
+  (`vault.py get`, `vault.py verify`, `scripts/policy_extract.py`'s own printed extraction
+  candidate) - each already existed as a designed exception before this bump; this is the
+  first time the constitution names all three together. No gate, mode, or secrets-backend
+  behavior changed. Templates unchanged.
 -->
 
 # Headless Constitution
@@ -107,7 +120,16 @@ stay free and reproducible.
   vault-grade local data (gitignored, never shared, `--no-screenshot` available). The profile
   directory's own session-cookie file (`session-cookies.json`, launched-profile path only)
   inherits this same vault-grade classification; a cookie name or value never appears in a
-  note, an exception message, or any preview artifact.
+  note, an exception message, or any preview artifact. The insurer list for the insurance
+  quote comparison feature lives inside `profile.feature_configs.insurance.companies`
+  (specs/005-insurance-quote-comparison), not a separate vault item; there is no
+  `current_policy` field anywhere in `profile` - each insured asset's own `policy_doc` PDF is
+  extracted (deterministic heuristics, `pypdf`, never an LLM) and Director-confirmed instead,
+  cached under `reports/` (both `captures/` and the rendered report), which inherits
+  `previews/`'s own vault-grade classification. Three documented, narrowly-scoped exceptions
+  to the never-print-a-value convention exist, each a single interactive Director-invoked
+  terminal command: `vault.py get`, `vault.py verify`, and `scripts/policy_extract.py`'s own
+  printed extraction candidate.
 - **Registry is the only writable source**: a script may type a value only if it exists in the
   profile registry. LLM-derived values are structurally unwritable.
 - **Browser**: invisible by default (preview/check run Chrome's headless mode; apply opens a
@@ -150,4 +172,4 @@ never introduces rules of its own. Every spec, plan, and task list produced by `
 MUST be checked for compliance against the principles and hard rules above, and any
 complexity beyond them MUST be justified in the plan's Complexity Tracking table.
 
-**Version**: 1.3.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-25
+**Version**: 1.3.1 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-26

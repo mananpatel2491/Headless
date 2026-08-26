@@ -17,10 +17,15 @@ principle.
 **Organization**: Tasks are grouped by user story so each story is independently implementable and
 testable, mirroring spec 003's and spec 004's own tasks.md shape.
 
-**Status**: NOT implemented. This delivery is spec-authoring only, per this feature's own brief (no
-code, no browser, no branch, no commit). Every task below is unchecked `[ ]`; none has been run.
-`/speckit-implement` (a separate, later, explicitly authorized run) is what actually executes this
-list.
+**Status**: IMPLEMENTED (2026-08-26, `/speckit-implement`, worktree `v0.0.5`), gate green: 453 unit
+tests passed / 8 skipped (opt-in browser suite), `verify_structure.py` SUCCESS,
+`scan_secrets.py --staged` clean, `HEADLESS_TEST_BROWSER=1 pytest tests/test_gates_browser.py` 8
+passed. Staged, not committed (Director's own explicit instruction gates the commit, per this
+delivery's own brief). 74 of 76 tasks below are checked `[x]`; the two left unchecked, T025 and
+T043, each combine an automated half already run (their own unit test files, both green) with a
+Director-UAT half this delivery cannot perform without touching `~/.headless/`, a real terminal
+passphrase prompt, or a real browser window against the live Progressive site - see each task's
+own note and this delivery's report for exactly what remains.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -41,7 +46,7 @@ root `../worktrees/Headless/v0.0.5/`.
 **Purpose**: the one filesystem-level precondition (`reports/` gitignored) in place before
 anything writes there.
 
-- [ ] T001 Update `.gitignore`: add `reports/` as a new top-level entry, mirroring the existing
+- [x] T001 Update `.gitignore`: add `reports/` as a new top-level entry, mirroring the existing
   `previews/` entry exactly (research.md D4: `reports/` is a new sibling directory, derived
   location, no new environment variable)
 
@@ -57,31 +62,31 @@ first file this feature adds onward.
 against fixtures before either the Progressive walk (US2) or the orchestrator (US4) can be written
 against it. Tests first.
 
-- [ ] T002 [P] Write `Step` dataclass shape tests in `tests/test_steps.py` (new file): `ClickStep`,
+- [x] T002 [P] Write `Step` dataclass shape tests in `tests/test_steps.py` (new file): `ClickStep`,
   `HumanStep`, `CaptureStep` each construct with their documented fields (data-model.md's table)
   and are frozen/immutable, matching `FieldPlan`'s own existing `@dataclass(frozen=True)` shape
-- [ ] T003 [P] Write `Session.click` tests in `tests/test_session.py`: refuses outside apply mode
+- [x] T003 [P] Write `Session.click` tests in `tests/test_session.py`: refuses outside apply mode
   with `GateRefused`, matching `Session.fill`'s existing refusal test's shape; a successful click
   against a fixture page calls the locator's `click()` exactly once, no retry; a locator-click
   exception is wrapped into `ClickFailed` naming only `step_name`/`selector`/`cause_class`, never
   the underlying exception's own message (mirrors the existing `FillFailed` leak-proof test)
-- [ ] T004 [P] Write `Session.capture` tests in `tests/test_session.py`: an extractor whose
+- [x] T004 [P] Write `Session.capture` tests in `tests/test_session.py`: an extractor whose
   selector resolves returns its stripped text; an extractor whose selector does not resolve
   returns `""` plus exactly one `note: capture field ... not found` line, and the call still
   processes every remaining extractor in the same dict (SC-009); the returned dict always has the
   same keys as the input `extractors` dict, regardless of how many resolved
-- [ ] T005 Implement `ClickStep`, `HumanStep`, `CaptureStep` in `headless/steps.py` (new file):
+- [x] T005 Implement `ClickStep`, `HumanStep`, `CaptureStep` in `headless/steps.py` (new file):
   three frozen dataclasses per data-model.md's table; `Step = FieldPlan | ClickStep | HumanStep |
   CaptureStep` type alias (import `FieldPlan` from `headless/fields.py`, do not redefine it)
-- [ ] T006 Implement `Session.click` and `ClickFailed` in `headless/session.py`: `click(selector)`
+- [x] T006 Implement `Session.click` and `ClickFailed` in `headless/session.py`: `click(selector)`
   refuses outside apply mode (same `GateRefused` message pattern as `fill`); one `locator.click()`
   call, no retry; wraps any exception into `ClickFailed` (new class alongside `FillFailed`, no
   `redact()` call needed since a click carries no typed value)
-- [ ] T007 Implement `Session.capture` in `headless/session.py`: for each `(field_key, selector)`
+- [x] T007 Implement `Session.capture` in `headless/session.py`: for each `(field_key, selector)`
   in `extractors`, check `locator(selector).count() > 0`; found -> stripped text; not found -> `""`
   plus one `note:` print; never raises for a missing selector; returns a dict with every input key
   present
-- [ ] T008 Run `python -m pytest -q tests/test_steps.py tests/test_session.py -k "click or
+- [x] T008 Run `python -m pytest -q tests/test_steps.py tests/test_session.py -k "click or
   capture"` and make T002-T004 green against the T005-T007 implementation
 
 **Phase 2b (part 1; T054-T059) was added by Director amendment after this phase was first drafted
@@ -95,7 +100,7 @@ section, for the same physical-placement reason this part lives inside Phase 2's
 Dependencies & Execution Order section below for why both parts count as one Foundational
 sub-phase despite living in two different document sections.**
 
-- [ ] T054 [P] Write `ProfileRegistry` array-traversal tests in `tests/test_profile.py`: a dotted
+- [x] T054 [P] Write `ProfileRegistry` array-traversal tests in `tests/test_profile.py`: a dotted
   path reaching a list node selects the unique element whose `type` field equals the next segment,
   then traversal continues from that element (including through a second list nested inside the
   matched element); a segment matching zero elements raises the existing `RegistryMissing(path)`,
@@ -105,19 +110,19 @@ sub-phase despite living in two different document sections.**
   node is still a list or a dict continues to raise the existing non-scalar `RegistryMissing`,
   unchanged from before this amendment; every existing dict-traversal and scalar-leaf test in this
   file still passes unmodified (zero behavior change for a document with no list anywhere in it)
-- [ ] T055 Implement the array-traversal branch and `RegistryAmbiguous` in `headless/profile.py`
+- [x] T055 Implement the array-traversal branch and `RegistryAmbiguous` in `headless/profile.py`
   per data-model.md's resolver state machine and contracts/walk-capture-report.md section 7
   (spec FR-040 through FR-044)
-- [ ] T056 [P] Write a `RegistryAmbiguous`-prints-via-REFUSED test in `tests/test_errand.py`: a
+- [x] T056 [P] Write a `RegistryAmbiguous`-prints-via-REFUSED test in `tests/test_errand.py`: a
   fixture `Errand` whose plan resolves a path that raises `RegistryAmbiguous` prints
   `REFUSED: {exc}` and exits `1`, the same pre-session treatment `RegistryMissing` already
   receives.
-- [ ] T056b Wire `RegistryAmbiguous` into `headless/errand.py`'s existing pre-session exception
+- [x] T056b Wire `RegistryAmbiguous` into `headless/errand.py`'s existing pre-session exception
   tuple alongside `ConfigError`/`GateRefused`/`SecretMissing`/`RegistryMissing` (spec FR-045) - the
   implementation T056's own test proves correct.
-- [ ] T057 Run `python -m pytest -q tests/test_profile.py tests/test_errand.py -k "registry or
+- [x] T057 Run `python -m pytest -q tests/test_profile.py tests/test_errand.py -k "registry or
   ambiguous"` and make T054/T056 green against the T055/T056b implementation
-- [ ] T058 [P] Write the `profile.template.json` drift test in `tests/test_profile.py` (or a new
+- [x] T058 [P] Write the `profile.template.json` drift test in `tests/test_profile.py` (or a new
   `tests/test_profile_template.py`, implementer's choice): load `profile.template.json` (a plain
   file read from the repository root, never through the vault, never prompting for a passphrase)
   and resolve, through `ProfileRegistry.get`, every registry path any shipped walk in this delivery
@@ -129,10 +134,13 @@ sub-phase despite living in two different document sections.**
   perform - research.md D12/D14's own worktree-gap note), prove this test's own logic against a
   synthetic in-memory fixture document standing in for the template (spec SC-018), so the test is
   a direct drop-in, unmodified, once the real file is present
-- [ ] T059 Run `python -m pytest -q -k template` and confirm T058's test passes against its interim
+- [x] T059 Run `python -m pytest -q -k template` and confirm T058's test passes against its interim
   fixture; re-run it once this worktree has merged forward from or been rebased onto current `main`
-  to confirm it passes against the real `profile.template.json` too (deferred - not this
-  delivery's own commit gate, since the file is not yet present here)
+  to confirm it passes against the real `profile.template.json` too. UPDATE (2026-08-26): `main`
+  was already merged into this worktree before this delivery began (commit `1b0a7b8`), so
+  `profile.template.json` was present from the start - both the interim-fixture test and the
+  real-file test ran in the same `pytest -q -k template` invocation (6 passed); the "deferred"
+  framing this task was originally drafted under never applied to this actual delivery
 
 **Checkpoint**: the four `Step` kinds exist and `Session` can execute the two new ones in
 isolation, proven correct against fixtures with zero browser launches; `ProfileRegistry.get` can
@@ -153,27 +161,27 @@ stays visible for the rest of a run once any `HumanStep` has surfaced it.
 run against a fake `Session`, in preview then apply mode (spec.md's own Independent Test for this
 story).
 
-- [ ] T009 [P] [US1] Write a default-`walk()` test in `tests/test_errand.py`: a fixture `Errand`
+- [x] T009 [P] [US1] Write a default-`walk()` test in `tests/test_errand.py`: a fixture `Errand`
   subclass that overrides only `plan()` (not `walk()`) produces a `walk()` result identical to
   `plan()`'s own return value, and every existing `test_errand.py` scenario (pre-resolution,
   preview masking, apply filling, the trailing handoff) still passes unmodified, proving zero
   behavior change for a `plan()`-only errand (spec Acceptance Scenario US1-1)
-- [ ] T010 [P] [US1] Write a preview-never-navigates-past-landing test in `tests/test_errand.py`:
+- [x] T010 [P] [US1] Write a preview-never-navigates-past-landing test in `tests/test_errand.py`:
   a fixture `Errand` whose `walk()` returns one `FieldPlan` plus one each of `ClickStep`,
   `HumanStep`, `CaptureStep`, run in preview mode against a fake `Session` that records every
   method call - assert `goto` was called exactly once and `click`/`handoff`/`capture` were called
   zero times (SC-001); assert the preview JSON's new `steps` list names the three non-`FieldPlan`
   steps by kind and name only
-- [ ] T011 [P] [US1] Write an apply-mode four-step-dispatch test in `tests/test_errand.py`: the
+- [x] T011 [P] [US1] Write an apply-mode four-step-dispatch test in `tests/test_errand.py`: the
   same fixture walk, run in apply mode against a fake `Session`, proves `fill`/`click`/`handoff`/
   `capture` each fire exactly once, in the walk's own declared order, followed by exactly one more
   `handoff` call for the trailing `self.HANDOFF` (spec Acceptance Scenario US1-4)
-- [ ] T012 [US1] Write a window-stays-visible test in `tests/test_session.py` (or
+- [x] T012 [US1] Write a window-stays-visible test in `tests/test_session.py` (or
   `tests/test_errand.py`, implementer's choice matching whichever file already covers this kind of
   cross-call test): a walk with two `HumanStep`s, run in apply mode against a fake `Session` whose
   `_restore_window`/`_hide_window`-equivalent calls are spied on, proves the hide-equivalent path
   is never invoked a second time after the first `HumanStep` fires (spec Acceptance Scenario US1-5)
-- [ ] T013 [US1] Implement `Errand.walk(registry)` in `headless/errand.py`: default `return
+- [x] T013 [US1] Implement `Errand.walk(registry)` in `headless/errand.py`: default `return
   self.plan(registry)`; update the pre-resolution loop to iterate `self.walk(registry)` and skip
   any entry without a `.source` attribute (i.e. anything other than `FieldPlan`); update the
   apply-mode loop to dispatch by `isinstance` across the four `Step` kinds per data-model.md's
@@ -181,10 +189,10 @@ story).
   `{"kind": ..., "name": ...}` for every other step kind to a new `PreviewRecord.steps` list; leave
   the trailing `session.handoff(self.HANDOFF)` call unchanged in shape (research.md D2: no new
   conditional there)
-- [ ] T014 [US1] Update `headless/preview.py`'s `PreviewRecord`: add `steps: list[dict] =
+- [x] T014 [US1] Update `headless/preview.py`'s `PreviewRecord`: add `steps: list[dict] =
   field(default_factory=list)` (additive, backward-compatible field); include it in `to_json()`'s
   payload
-- [ ] T015 [US1] Run `python -m pytest -q tests/test_errand.py tests/test_session.py tests/
+- [x] T015 [US1] Run `python -m pytest -q tests/test_errand.py tests/test_session.py tests/
   test_preview.py -k "walk or steps"` and make T009-T012 green against the T013-T014
   implementation
 
@@ -203,7 +211,7 @@ and the capture model that turns its quote page into structured data.
 landing selectors, plus this phase's own unit tests against fixture data (spec.md's own
 Independent Test for this story defers the real-site proof to Director UAT).
 
-- [ ] T016 [P] [US2] Write `companies` parsing tests in `tests/test_capture.py` (new file):
+- [x] T016 [P] [US2] Write `companies` parsing tests in `tests/test_capture.py` (new file):
   `parse_companies` (given the already-parsed `feature_configs.insurance.companies` fragment, not
   a raw string - `profile` as a whole is parsed once by the caller) accepts a valid array
   (including the empty array `[]`) and rejects a missing, non-array, or non-string-entry shape
@@ -212,7 +220,7 @@ Independent Test for this story defers the real-site proof to Director UAT).
   `parse_current_policy` in this delivery's own design (D3, revised twice) - `CurrentPolicy`
   values are built only by `headless/policydoc.py`'s extraction-and-confirmation path (Phase 2b
   below), never parsed from `profile` directly.
-- [ ] T017 [P] [US2] Write `assemble_capture`/capture file tests in `tests/test_capture.py`: a
+- [x] T017 [P] [US2] Write `assemble_capture`/capture file tests in `tests/test_capture.py`: a
   fixture flat `raw_fields` dict (using the `premium.amount`/`coverage.<slug>.limit` vocabulary,
   data-model.md) assembles into the documented `QuoteCapture` shape; an out-of-vocabulary key in
   `raw_fields` is ignored, not an error; `write_capture` writes to
@@ -220,10 +228,10 @@ Independent Test for this story defers the real-site proof to Director UAT).
   overwrites the first (accumulates); `read_freshest_capture` against a fixture directory with
   several timestamped files for one insurer returns the newest by filename timestamp, and returns
   `None` for an insurer with no capture file at all
-- [ ] T018 [US2] Implement `CurrentPolicy` (the dataclass shape only - no parse function),
+- [x] T018 [US2] Implement `CurrentPolicy` (the dataclass shape only - no parse function),
   `QuoteCapture`, `QuoteInputError`, `parse_companies`, `assemble_capture`, `write_capture`,
   `read_freshest_capture` in `headless/capture.py` (new file) per data-model.md's full contract
-- [ ] T019 [US2] Run `python -m pytest -q tests/test_capture.py` and make T016-T017 green against
+- [x] T019 [US2] Run `python -m pytest -q tests/test_capture.py` and make T016-T017 green against
   the T018 implementation
 
 **Phase 2b (part 2; Director amendment 6): per-asset `policy_doc` extraction, confirmation, and
@@ -234,9 +242,9 @@ depends on it. Continues Phase 2b's own part 1 (T054-T059, above, inside Phase 2
 section) - both parts together are the one Foundational sub-phase the Dependencies & Execution
 Order section below calls "Phase 2b."**
 
-- [ ] T019b [P] Add `pypdf` to `requirements.txt` (spec's new runtime dependency, plan.md's own
+- [x] T019b [P] Add `pypdf` to `requirements.txt` (spec's new runtime dependency, plan.md's own
   Primary Dependencies note)
-- [ ] T019c [P] Write `ExtractionCandidate`/`extract_candidate` tests in
+- [x] T019c [P] Write `ExtractionCandidate`/`extract_candidate` tests in
   `tests/test_policydoc.py` (new file): a fixture PDF (synthetic declarations-page text, built via
   a fake `pypdf` reader double so the test never needs a real binary PDF asset) with clean,
   parseable coverage lines extracts a candidate shaped per `CurrentPolicy` plus `warnings: []`; a
@@ -244,27 +252,27 @@ Order section below calls "Phase 2b."**
   every heuristic (dollar amounts, split-limit `100,000/300,000` patterns, deductible-line
   detection, premium/term detection) gets at least one fixture proving it fires correctly on a
   clean input and degrades to `None`/a `warnings` entry, never a crash, on a hostile one
-- [ ] T019d [P] Write `confirm_candidate` tests in `tests/test_policydoc.py`: an injectable
+- [x] T019d [P] Write `confirm_candidate` tests in `tests/test_policydoc.py`: an injectable
   `input_fn` returning "accept" returns the candidate unchanged as a `CurrentPolicy`; an
   `input_fn` returning a corrected JSON document returns that corrected `CurrentPolicy` instead;
   an `input_fn` returning "decline" (or anything not recognized as accept/correct) returns `None`;
   no real `input()` call happens in any test (SC-019's unit-level half)
-- [ ] T019e [P] Write `PolicyReference`/cache tests in `tests/test_policydoc.py`: `write_policy_
+- [x] T019e [P] Write `PolicyReference`/cache tests in `tests/test_policydoc.py`: `write_policy_
   reference` writes `reports/policy/<asset-key>.json` at mode `0600` with the confirmed
   `CurrentPolicy` fields plus `source_path`/`confirmed_at` (SC-021); `read_policy_reference`
   returns `None` for a missing or malformed file, never raising (FR-058); a fixture proves
   `write_policy_reference` is never called when `confirm_candidate` returned `None` (SC-019)
-- [ ] T019f [P] Write `is_excluded` tests in `tests/test_policydoc.py`: `"n/a"` on either
+- [x] T019f [P] Write `is_excluded` tests in `tests/test_policydoc.py`: `"n/a"` on either
   `currently_insured` or `policy_doc` returns `True`; an absent field, or any other string, returns
   `False`; the function never mutates its input
-- [ ] T019g Implement `CurrentPolicy` reuse (import from `headless/capture.py`, no duplicate
+- [x] T019g Implement `CurrentPolicy` reuse (import from `headless/capture.py`, no duplicate
   definition), `ExtractionCandidate`, `extract_candidate`, `confirm_candidate`, `PolicyReference`,
   `write_policy_reference`, `read_policy_reference`, `is_excluded` in `headless/policydoc.py` (new
   file) per data-model.md's contract - `pypdf` for text extraction, deterministic heuristics only,
   no LLM call anywhere (spec FR-051, SC-022)
-- [ ] T019h Run `python -m pytest -q tests/test_policydoc.py` and make T019c-T019f green against
+- [x] T019h Run `python -m pytest -q tests/test_policydoc.py` and make T019c-T019f green against
   the T019g implementation
-- [ ] T019i [P] Write `scripts/policy_extract.py`'s own orchestration tests in
+- [x] T019i [P] Write `scripts/policy_extract.py`'s own orchestration tests in
   `tests/test_policy_extract.py` (new file): a fixture `profile` document with two assets - one
   eligible (`policy_doc` a real path), one excluded (`"n/a"`) - processes only the eligible one,
   with zero extraction attempted for the excluded one and no note printed for it (SC-023's
@@ -272,27 +280,27 @@ Order section below calls "Phase 2b."**
   restricts processing to just that one asset; the script's own vault read happens exactly once
   regardless of how many eligible assets exist (single passphrase prompt, no N+1 residual, unlike
   `quote_compare.py`)
-- [ ] T019j Implement `scripts/policy_extract.py` (new file) per contracts/
+- [x] T019j Implement `scripts/policy_extract.py` (new file) per contracts/
   walk-capture-report.md section 9: asset discovery (direct `profile` JSON parse, never
   `ProfileRegistry`), the extract-confirm-cache sequence per eligible asset, the optional
   single-asset CLI argument, zero-argument batch mode
-- [ ] T019k Run `python -m pytest -q tests/test_policy_extract.py` and make T019i green against
+- [x] T019k Run `python -m pytest -q tests/test_policy_extract.py` and make T019i green against
   the T019j implementation
-- [ ] T020 [P] [US2] Write the Progressive walk's own pure-logic tests in
+- [x] T020 [P] [US2] Write the Progressive walk's own pure-logic tests in
   `tests/test_insurers_progressive.py` (new file): `ProgressiveQuoteErrand.dependencies` contains
   exactly the two verified landing selectors (`#zipCode_mma`, `#qsButton_mma`); `plan()`/`walk()`'s
   first two steps are a `FieldPlan` sourced `registry:addresses.home.zip` targeting `#zipCode_mma`
   and a `ClickStep` targeting `#qsButton_mma`, matching the two selectors verified before this
   feature was scoped (spec FR-031) - no assertion about any step beyond these two, since nothing
   beyond the landing page is proven until implementation-time recon (T022) actually runs
-- [ ] T021 [US2] Implement `WALK_REGISTRY` in `headless/insurers/__init__.py` (new package) and a
+- [x] T021 [US2] Implement `WALK_REGISTRY` in `headless/insurers/__init__.py` (new package) and a
   landing-page-only `ProgressiveQuoteErrand(Errand)` in `headless/insurers/progressive.py` (new
   file) per T020's assertions: `name = "progressive"`, `HANDOFF` describing the walk's own
   terminal state (research.md D2: e.g. "review the report; nothing further to do in the browser"),
   `dependencies = ["#zipCode_mma", "#qsButton_mma"]`, `url()` returning
   `https://www.progressive.com/auto/`, `walk(registry)` returning the landing `FieldPlan` and
   `ClickStep` only - no funnel steps yet, pending T022
-- [ ] T022 [US2] Perform implementation-time recon (research.md D8): at most three headless,
+- [x] T022 [US2] Perform implementation-time recon (research.md D8): at most three headless,
   scratch-Chrome-profile walks against the real Progressive site, synthetic data only, never the
   Director's real identity/address/dob/licence, never a purchase/submit/payment click. Record the
   outcome in `research.md` (a new "Recon results" section, dated): which selectors past the
@@ -305,7 +313,7 @@ Order section below calls "Phase 2b."**
   record that a `HumanStep` asking the Director to choose is required (spec FR-014) - and whether
   the funnel refused headless Chrome at any point (record as evidence for the standing
   headless-user-agent question regardless of outcome) - spec FR-032/FR-033/FR-034, SC-012
-- [ ] T023 [US2] Extend `ProgressiveQuoteErrand.walk()` in `headless/insurers/progressive.py` with
+- [x] T023 [US2] Extend `ProgressiveQuoteErrand.walk()` in `headless/insurers/progressive.py` with
   whatever T022's recon actually proved: further `FieldPlan`/`ClickStep` entries for anything
   automatable (including a `FieldPlan` sourced `registry:vehicles.primary.currently_insured` if
   T022 found that question on a reachable page, spec FR-035), `HumanStep` entries for anything
@@ -321,7 +329,7 @@ Order section below calls "Phase 2b."**
   (repository root, already exists on `main`, Amendment 5), extend that one file in this same
   change - never invent a second schema document (spec FR-049); the drift test added in Phase 2
   (T058) enforces this.
-- [ ] T024 [US2] Update `tests/test_insurers_progressive.py` to cover whatever T023 actually
+- [x] T024 [US2] Update `tests/test_insurers_progressive.py` to cover whatever T023 actually
   shipped (the exact steps recon proved) - this task's scope is bounded by T022's real findings,
   not predicted here. Also add the SC-015 proof: a grep or an AST-walk test over
   `headless/insurers/progressive.py`'s own source confirming it contains no `identities.spouse.`,
@@ -329,9 +337,17 @@ Order section below calls "Phase 2b."**
   reference, so FR-036's guard is checked mechanically, not only by the task description above.
 - [ ] T025 [US2] Run `python -m pytest -q tests/test_insurers_progressive.py`, then quickstart
   Scenario 3 (`scripts/quote_compare.py --check`, once T040 exists) and Scenario 5 (a real `--apply`
-  run) by hand (Director UAT): confirm the landing selectors still probe found, and confirm a
-  `reports/captures/progressive-<timestamp>.json` file appears shaped per data-model.md after a
-  real apply run
+  run) by hand (Director UAT): confirm the landing selectors still probe found, and confirm the
+  actual outcome of a real apply run against the corrected Scenario 5 (quickstart.md, FIX-FIRST 1,
+  Opus verifier 2026-08-26) - **not** a `reports/captures/progressive-<timestamp>.json` file, which
+  this task's own original wording expected before implementation-time recon (research.md D8)
+  proved the shipped walk never reaches a capturable page: the walk stops after the quote-start
+  click, and the open question this scenario actually exists to answer is whether Progressive's own
+  403 block (found under headless Chrome during recon) also occurs under a real, non-headless
+  `--apply` window, or whether the click succeeds there. PARTIAL (2026-08-26): the automated half is
+  done and green (`tests/test_insurers_progressive.py`, 8 passed). Scenario 3/Scenario 5 need a real
+  vault passphrase on a real terminal and a real windowed Chrome against the live Progressive site -
+  left for the Director; left unchecked pending that UAT.
 
 **Checkpoint**: Progressive is a real, working, recon-proven insurer walk. Every selector it ships
 is proven, not assumed (FR-032). The capture model is proven against both fixture data and (via
@@ -349,39 +365,39 @@ feature's actual deliverable.
 through the comparison engine and the report generator directly, no browser, no vault (spec.md's
 own Independent Test for this story).
 
-- [ ] T026 [P] [US3] Write coverage-line normalization and classification tests in
+- [x] T026 [P] [US3] Write coverage-line normalization and classification tests in
   `tests/test_compare.py` (new file): two differently-worded fixture line names (e.g. "Bodily
   Injury Liability" and "BI") normalize to the same alias-table key; a captured line classifies as
   better/equal/worse against a matching `current_policy` line per its limit; a captured field with
   an empty-string value classifies as missing
-- [ ] T027 [P] [US3] Write ranking-rule tests in `tests/test_compare.py`: a strictly-better,
+- [x] T027 [P] [US3] Write ranking-rule tests in `tests/test_compare.py`: a strictly-better,
   cheaper fixture quote outranks `current_policy`; a fixture quote with zero worse lines outranks
   a cheaper fixture quote with one worse line, regardless of price (SC-006); two quotes tied on
   "no worse line" rank by lower normalized premium; a premium-and-worse-line tie breaks by fewer
   missing lines; the rule-trail string for the top-ranked quote states the rule in plain language,
   built only from the same comparison data
-- [ ] T028 [P] [US3] Write determinism tests in `tests/test_compare.py`: calling
+- [x] T028 [P] [US3] Write determinism tests in `tests/test_compare.py`: calling
   `build_comparison` twice with the same fixture inputs (including a `captures` dict constructed
   in a different key-insertion order the second time) produces byte-identical `ranked_quotes`
   ordering and `rule_trail` text both times
-- [ ] T028b [P] [US3] Write no-current-policy fallback tests in `tests/test_compare.py`: calling
+- [x] T028b [P] [US3] Write no-current-policy fallback tests in `tests/test_compare.py`: calling
   `build_comparison(None, captures)` produces a `ComparisonResult` with `has_current_policy is
   False`, every `RankedQuote.line_classifications` empty (no better/worse/equal/missing computed),
   quotes ranked by monthly-equivalent premium (`amount / term_months`) ascending, and a
   `rule_trail` stating plainly that no current policy was on file (spec FR-046)
-- [ ] T029 [US3] Implement the coverage-line alias table, `classify_line`, `rank_quotes`,
+- [x] T029 [US3] Implement the coverage-line alias table, `classify_line`, `rank_quotes`,
   `ComparisonResult`, `RankedQuote`, `build_comparison` in `headless/compare.py` (new file) per
   data-model.md's contract and research.md D5/D10 - pure functions, no I/O, no LLM call anywhere
   in this module; `build_comparison`'s `current_policy` parameter accepts `None` per FR-046
-- [ ] T030 [US3] Run `python -m pytest -q tests/test_compare.py` and make T026-T028b green against
+- [x] T030 [US3] Run `python -m pytest -q tests/test_compare.py` and make T026-T028b green against
   the T029 implementation
-- [ ] T031 [P] [US3] Write report-structure tests in `tests/test_report.py` (new file): a fixture
+- [x] T031 [P] [US3] Write report-structure tests in `tests/test_report.py` (new file): a fixture
   `ComparisonResult` renders a table with one column per fixture quote plus `current_policy`'s own
   column, one row per fixture coverage line, correctly marked cells, a premium row, and a
   recommendation banner naming the fixture's own top-ranked quote and rule trail; a
   `ComparisonResult` with `recommended is None` (empty `ranked_quotes`) renders a plain
   no-comparison-yet statement instead of a broken banner
-- [ ] T032 [P] [US3] Write zero-external-reference and value-free-failure-row tests in
+- [x] T032 [P] [US3] Write zero-external-reference and value-free-failure-row tests in
   `tests/test_report.py`: a rendered report contains no `http(s)://`, `<script src=`, or `<link
   rel="stylesheet" href=` outside the provenance footer's own plain-text `source_url` values
   (SC-002); a distinctive fixture-shaped failure string passed as part of a `failed` insurer's
@@ -389,17 +405,17 @@ own Independent Test for this story).
   successful capture yet" phrase does (SC-003); the provenance footer names each included
   fixture quote's `fetched_at` and `source_url` and duplicates no other capture field there
   (SC-010)
-- [ ] T032b [P] [US3] Write the no-current-policy report test in `tests/test_report.py`: a fixture
+- [x] T032b [P] [US3] Write the no-current-policy report test in `tests/test_report.py`: a fixture
   `ComparisonResult` with `has_current_policy is False` renders "no current policy on file" in
   every row of the current-policy column, no better/worse/missing/equal mark on any quote's own
   cells, and a rule-trail statement naming premium-only ranking (spec FR-047, SC-017's report half)
-- [ ] T033 [US3] Implement `render_report` and `write_report` in `headless/report.py` (new file)
+- [x] T033 [US3] Implement `render_report` and `write_report` in `headless/report.py` (new file)
   per contracts/walk-capture-report.md section 5 - standard-library string construction only
   (research.md D6), `html.escape` on every piece of captured or current-policy text before it
   reaches the output, one inline `<style>` block, no external reference, no required JavaScript;
   `render_report` reads `comparison.has_current_policy` to choose between FR-023's normal rendering
   and FR-047's marker
-- [ ] T034 [US3] Run `python -m pytest -q tests/test_report.py` and make T031-T032b green against
+- [x] T034 [US3] Run `python -m pytest -q tests/test_report.py` and make T031-T032b green against
   the T033 implementation
 
 **Checkpoint**: the comparison engine and report generator are fully proven against synthetic
@@ -421,11 +437,11 @@ walk has finished.
 `geico` produces a "not mapped yet" line with zero browser activity attempted for it (spec.md's
 own Independent Test for this story).
 
-- [ ] T035 [P] [US4] Write unmapped-insurer tests in `tests/test_quote_compare.py` (new file): a
+- [x] T035 [P] [US4] Write unmapped-insurer tests in `tests/test_quote_compare.py` (new file): a
   fixture `profile` document whose `feature_configs.insurance.companies` contains an id absent
   from `WALK_REGISTRY`, run in every mode, produces a "not mapped yet" line for that id and
   triggers zero constructions of any `Errand`/`Config`/`Session`-shaped fixture spy for it (SC-007)
-- [ ] T036 [P] [US4] Write malformed-input-refuses-first tests in `tests/test_quote_compare.py`: a
+- [x] T036 [P] [US4] Write malformed-input-refuses-first tests in `tests/test_quote_compare.py`: a
   fixture `profile` document whose `feature_configs` or `feature_configs.insurance` object is
   missing, or whose `companies` is malformed, causes the run to refuse before any mapped insurer's
   `Errand` subclass is constructed, for every mode including preview (SC-008). A missing or
@@ -433,24 +449,24 @@ own Independent Test for this story).
   proceeds with `current_policy = None` (spec FR-057/FR-058/FR-046, T028b/T032b's own fallback behavior);
   this is a deliberate asymmetry from the pre-Amendment-6 design, where a malformed hand-typed
   `current_policy` value used to refuse - there is no hand-typed value to malform any more.
-- [ ] T036b [P] [US4] Write excluded-asset tests in `tests/test_quote_compare.py`: a fixture
+- [x] T036b [P] [US4] Write excluded-asset tests in `tests/test_quote_compare.py`: a fixture
   targeted asset (`vehicles.primary`) with `currently_insured` or `policy_doc` set to `"n/a"`
   causes zero insurer `Errand` constructions in every mode, one informative exclusion line, and
   (apply mode only) a written report whose content states the exclusion rather than a comparison
   table (spec FR-063, FR-064, SC-023's orchestration half)
-- [ ] T037 [P] [US4] Write per-insurer-isolation tests in `tests/test_quote_compare.py`: two
+- [x] T037 [P] [US4] Write per-insurer-isolation tests in `tests/test_quote_compare.py`: two
   fixture mapped insurers, the first's `Errand.run()` stubbed to return a non-zero exit code, the
   second's stubbed to return `0` and produce a fixture capture - the orchestrator's apply-mode run
   still calls the second insurer's `run()` and still reaches the report-writing step, with the
   first insurer's failure recorded as a value-free note (SC-005)
-- [ ] T038 [P] [US4] Write freshest-capture-wins tests in `tests/test_quote_compare.py`: a fixture
+- [x] T038 [P] [US4] Write freshest-capture-wins tests in `tests/test_quote_compare.py`: a fixture
   insurer whose `run()` returns non-zero this invocation, but who has an older capture file already
   on disk from a fixture "prior run," still contributes that older capture to the comparison
   (not a "failed" row), with its own older `fetched_at` value intact in the resulting report input
-- [ ] T039 [P] [US4] Write flag-forwarding tests in `tests/test_quote_compare.py`: the
+- [x] T039 [P] [US4] Write flag-forwarding tests in `tests/test_quote_compare.py`: the
   orchestrator's own `--profile-dir`/`--headless`/`--show`/`--preview-dir`/`--no-screenshot` values
   are present, unchanged, in the argv forwarded to a fixture mapped insurer's `run()` call
-- [ ] T040 [US4] Implement `scripts/quote_compare.py` (new file) per contracts/
+- [x] T040 [US4] Implement `scripts/quote_compare.py` (new file) per contracts/
   walk-capture-report.md section 4: `add_mode_arguments()`-based argparse, the startup sequence
   (parse `profile`, parse `feature_configs.insurance.companies` and refuse before any `Errand` is
   constructed on malformed input, find the targeted `vehicles.primary` asset and check
@@ -462,10 +478,10 @@ own Independent Test for this story).
   ...)`, then `compare.build_comparison`, then `report.render_report`/`write_report`), the
   exit-code rule (0 when a report was written - including the exclusion-case report, 1 for a
   pre-flight refusal, 2 for a usage error)
-- [ ] T041 [US4] Run `python -m pytest -q tests/test_quote_compare.py` and make T035, T036,
+- [x] T041 [US4] Run `python -m pytest -q tests/test_quote_compare.py` and make T035, T036,
   T036b, T037, T038, T039 all green
   against the T040 implementation
-- [ ] T042 [US4] Run the structural typing test against the new script:
+- [x] T042 [US4] Run the structural typing test against the new script:
   `python -m pytest -q tests/test_no_direct_typing.py` - `scripts/quote_compare.py` must pass
   unmodified (it only ever calls another `Errand` subclass's `.run()`, never a locator method
   directly, so no change to `FORBIDDEN_ATTRS` or `EXCLUDED` should be needed; if it is, that is a
@@ -482,6 +498,11 @@ own Independent Test for this story).
   refusal path (Scenario 10). Scenario 7 (multi-insurer failure isolation on a real second
   insurer) is not exercisable until a second insurer has its own future spec and its own
   registered walk - defer its real-site half; T037's fixture test already proves the mechanism.
+  NOT DONE this delivery (2026-08-26): every scenario here needs a real vault passphrase on a
+  real terminal, or a real windowed Chrome against a live site, or both - outside this delivery's
+  own brief (no `~/.headless/` touch, no visible browser window). Every scenario's own automated
+  equivalent (the fixture-driven unit test proving the same mechanism) already passes; this task
+  itself is left for the Director.
 
 **Checkpoint**: every user story independently proven; the orchestrator ties Phases 2-5 together
 without any of them needing to change. The report the Director asked for exists and is correct
@@ -491,7 +512,7 @@ against both fixture data (automated) and a real Progressive quote (Director UAT
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T044 [P] Update `CLAUDE.md`'s Secrets section: name `feature_configs.insurance.companies`
+- [x] T044 [P] Update `CLAUDE.md`'s Secrets section: name `feature_configs.insurance.companies`
   as living inside `profile` (not a separate item), the deletion of `current_policy` in favor of
   per-asset `policy_doc` extraction and confirmation (D15), and `reports/`'s (including
   `reports/policy/`'s) vault-grade classification (mirroring `previews/`'s existing sentence).
@@ -503,17 +524,17 @@ against both fixture data (automated) and a real Progressive quote (Director UAT
   printing (FR-053) to this same exception list, as a third documented exception scoped the same
   way as `vault.py get`/`verify` - one interactive, Director-invoked command, reviewing his own
   data on his own terminal.
-- [ ] T045 Regenerate `.specify/memory/constitution.md`: version bump assessed against the actual
+- [x] T045 Regenerate `.specify/memory/constitution.md`: version bump assessed against the actual
   wording change once T044 and T046-T049 exist (plan.md's own note: likely PATCH, extending
   existing hard rules' reach rather than adding a new one - confirm or revise against the real
   diff, do not assume PATCH without checking)
-- [ ] T046 [P] Add three new entries to `PATTERNS.md`: the sanctioned-click pattern
+- [x] T046 [P] Add three new entries to `PATTERNS.md`: the sanctioned-click pattern
   (`Session.click`, mirroring `Session.fill`'s "the only sanctioned way" framing and the structural
   `tests/test_no_direct_typing.py` guarantee), the walk-entry pattern (`Errand.walk()` defaulting
   to `plan()`, the mode matrix, the window-stays-visible-after-first-HumanStep rule), and
   `reports/`'s vault-grade classification (mirroring `previews/`'s own entry, noting the
   accumulates-vs-overwrites distinction between `captures/` and the dated report)
-- [ ] T047 [P] Update `scripts/README.md`: a new "Orchestrators" section documenting
+- [x] T047 [P] Update `scripts/README.md`: a new "Orchestrators" section documenting
   `scripts/quote_compare.py` as distinct from Maintenance and Errands (it composes other `Errand`
   subclasses rather than being one itself); a short amendment to the existing "Errand contract"
   section describing `walk()`/`HumanStep` etiquette for any future errand that adopts the walk
@@ -525,7 +546,7 @@ against both fixture data (automated) and a real Progressive quote (Director UAT
   `reports/policy/<asset-key>.json`; the extract-confirm-cache maintenance script this delivery
   adds, contracts section 9) - `scripts/quote_compare.py` gets its own Orchestrators-section row
   instead, since it is not a maintenance script.
-- [ ] T048 Add the v0.0.5 Changelog row to `Project_Structure.md` listing every file touched
+- [x] T048 Add the v0.0.5 Changelog row to `Project_Structure.md` listing every file touched
   (`headless/steps.py` [new], `headless/session.py`, `headless/errand.py`, `headless/preview.py`,
   `headless/profile.py` [array addressing, `RegistryAmbiguous`], `headless/capture.py` [new],
   `headless/compare.py` [new], `headless/report.py` [new], `headless/policydoc.py` [new],
@@ -534,15 +555,15 @@ against both fixture data (automated) and a real Progressive quote (Director UAT
   [pypdf], `.gitignore`, every new/updated test file, plus every docs-of-record file touched in
   this phase) and new Application Layer rows for the new modules, the new package, and `reports/`
   (including `reports/policy/`)
-- [ ] T049 [P] Update `Function_Mapping.md`: a row for `headless/insurers/progressive.py`'s
+- [x] T049 [P] Update `Function_Mapping.md`: a row for `headless/insurers/progressive.py`'s
   `ProgressiveQuoteErrand` (site, reads, writes-up-to, secrets/profile fields per whatever T022's
   recon actually shipped, handoff point); a note that `scripts/quote_compare.py` is an orchestrator
   composing other errands, not an errand itself, and has no row of its own here
-- [ ] T050 [P] Update `MEMORY.md`: record the Director's decision (this feature's own brief,
+- [x] T050 [P] Update `MEMORY.md`: record the Director's decision (this feature's own brief,
   2026-08-25) under a dated entry; add "Errands run" rows once Director UAT (T025, T043) produces
   real outcomes to record - site/tool name and PASS/FAIL only, never a captured premium or coverage
   figure
-- [ ] T052 Verify (do not implement or test) that this spec set's own references to
+- [x] T052 Verify (do not implement or test) that this spec set's own references to
   `scripts/vault.py get NAME` and `scripts/vault.py verify` - spec.md FR-037 through FR-039b,
   contracts/walk-capture-report.md sections 6 and 11, and quickstart.md Scenarios 1, 2, and 14
   (the seeding round trip, the `verify` check, and the later revise-it round trip) - match the
@@ -552,28 +573,37 @@ against both fixture data (automated) and a real Progressive quote (Director UAT
   (Scenario 1's seeding example, Scenario 14's own extension note) match the actual shipped
   file's real shape once this worktree has it (research.md D14). This is a documentation-accuracy
   check against already-shipped code - it adds no implementation and no test of any of it to this
-  delivery.
-- [ ] T051 [P] Add a suite-timing check covering SC-004: run `python -m pytest -q
+  delivery. UPDATE (2026-08-26): `main` was already merged into this worktree before this
+  delivery began (commit `1b0a7b8`) - `scripts/vault.py`'s `get`/`verify`/piped-`set` subcommands
+  and `profile.template.json` were all present from the start, so this verification ran directly
+  against the real files rather than waiting on a later merge. Read both directly: `scripts/
+  vault.py` matches FR-037 through FR-039c exactly (`get NAME` prints only the raw value plus a
+  newline; `verify` performs the documented structural comparison with value-free findings; `set`
+  accepts piped stdin and refuses a 1024+ character interactive value, printing the pipe hint
+  before prompting). `profile.template.json` matches quickstart.md's own description (three
+  type-discriminated arrays, one `feature_configs.insurance` object, no `current_policy` field
+  anywhere).
+- [x] T051 [P] Add a suite-timing check covering SC-004: run `python -m pytest -q
   tests/test_steps.py tests/test_capture.py tests/test_compare.py tests/test_report.py
   tests/test_insurers_progressive.py tests/test_quote_compare.py tests/test_profile.py
   tests/test_policydoc.py tests/test_policy_extract.py` and confirm it completes in under one
   second combined, with zero browser launches and zero passphrase prompts (matching NFR-002) - a
   hand-run/CI timing check, not a new assertion inside the suite itself; record the measured wall
   time in this task's own completion note.
-- [ ] T051b [P] Write the SC-011 fixture-hygiene grep as a repeatable check (alongside
+- [x] T051b [P] Write the SC-011 fixture-hygiene grep as a repeatable check (alongside
   `tests/test_no_direct_typing.py`'s own structural-grep convention, or a new small script/test):
   a repository-wide grep for this feature's own distinctive synthetic premium/coverage-limit
   fixture values finds them only under `tests/` and `specs/005-insurance-quote-comparison/`, never
   inside a shipped module under `headless/` or `scripts/` (SC-011).
-- [ ] T051c [P] Write the SC-014 structural-absence check (alongside `tests/test_no_direct_typing.py`'s
+- [x] T051c [P] Write the SC-014 structural-absence check (alongside `tests/test_no_direct_typing.py`'s
   own convention, or a new dedicated assertion): a repository-wide grep or import-graph check
   proves no call into `vault.py get`'s underlying function exists anywhere under `headless/` or in
   any errand script (SC-014, FR-039's own exception scope).
-- [ ] T051d [P] [US2] Extend T019c/T019i's own fixture-PDF coverage with an explicit SC-020
+- [x] T051d [P] [US2] Extend T019c/T019i's own fixture-PDF coverage with an explicit SC-020
   assertion in `tests/test_policy_extract.py`: a fixture PDF from which zero coverage lines could
   be parsed does not abort `scripts/policy_extract.py`'s processing of the remaining eligible
   assets, and does not cause `scripts/quote_compare.py`'s own report to refuse (SC-020, FR-058).
-- [ ] T053 Run the commit gate: `python -m pytest -q && python scripts/verify_structure.py &&
+- [x] T053 Run the commit gate: `python -m pytest -q && python scripts/verify_structure.py &&
   git add -A && python scripts/scan_secrets.py --staged` - the orchestrator (or an Opus verifier,
   per the global agent conventions) reviews before any commit; committing itself happens on the
   Director's explicit instruction, not automatically at the end of this task list
