@@ -1,6 +1,6 @@
 # Quickstart: Insurance Quote Comparison
 
-**Feature**: 005-insurance-quote-comparison | **Date**: 2026-08-25 (amended 2026-08-25, eight
+**Feature**: 005-insurance-quote-comparison | **Date**: 2026-08-25 (amended 2026-08-25, nine
 rounds - see spec.md's own amendment note)
 
 Runnable validation scenarios that prove the feature end-to-end, once implemented. Contracts are
@@ -75,11 +75,20 @@ would mean "no data yet," a different state - spec FR-061). `vehicles.primary` c
 `policy_doc` because that is the one asset this delivery's own comparison targets (spec FR-060).
 
 ```bash
-python scripts/vault.py set profile
+pbpaste | python scripts/vault.py set profile
 ```
 
-At the hidden prompt, paste the edited document (one line), then confirm the passphrase again at
-`age`'s own re-encrypt prompt.
+(Windows PowerShell: `Get-Clipboard | python scripts\vault.py set profile`.)
+
+Copy the edited document to the clipboard first (select-all, copy, in the editor), then run the
+command above - **never at the interactive hidden prompt**: `set`'s interactive path refuses any
+value of 1024 or more characters (the terminal's own canonical input-line limit, hotfix v0.0.4.3),
+and this document is 1235+ characters as raw JSON by construction (`profile.template.json`'s own
+shape, D14) - the interactive path will always refuse it. The piped path has no such limit, still
+never puts the value in argv or a file, and prints `value read from stdin (piped)` on success
+(the interactive prompt itself now prints this same pipe-command hint before asking for a value,
+hotfix v0.0.4.4, so the escape hatch is visible before you paste, not only after a refusal).
+Confirm the passphrase again at `age`'s own re-encrypt prompt afterward.
 
 **Caution**: do not save the plaintext document to a file at any point in this round trip - copy
 it from the terminal, edit it in the editor's own in-memory buffer, and paste it back; saving it
@@ -247,7 +256,9 @@ python scripts/vault.py get profile
 ```
 
 Copy the output, then edit `feature_configs.insurance.companies` to something invalid (a string
-instead of an array, for example), and `vault.py set profile` it back.
+instead of an array, for example), and pipe it back: `pbpaste | python scripts/vault.py set
+profile` (Scenario 1's own caution about the 1024-character interactive-prompt refusal applies
+here too - always pipe, never paste at the hidden prompt, for a document this size).
 
 ```bash
 python scripts/quote_compare.py --apply
@@ -262,7 +273,7 @@ afterward to restore a working document.
 ```bash
 python -m pytest -q tests/test_steps.py tests/test_capture.py tests/test_compare.py \
   tests/test_report.py tests/test_insurers_progressive.py tests/test_quote_compare.py \
-  tests/test_profile.py tests/test_policydoc.py
+  tests/test_profile.py tests/test_policydoc.py tests/test_policy_extract.py
 python -m pytest -q tests/test_errand.py -k walk
 python -m pytest -q tests/test_session.py -k "click or capture"
 ```
@@ -291,7 +302,7 @@ policy number, no real insurer-account identifier. Confirm this holds for the im
 delivery's actual test fixtures:
 
 ```bash
-python scripts/scan_secrets.py --paths tests/test_capture.py tests/test_compare.py tests/test_report.py tests/test_profile.py tests/test_policydoc.py
+python scripts/scan_secrets.py --paths tests/test_capture.py tests/test_compare.py tests/test_report.py tests/test_profile.py tests/test_policydoc.py tests/test_policy_extract.py
 ```
 
 Expected: clean - zero findings.

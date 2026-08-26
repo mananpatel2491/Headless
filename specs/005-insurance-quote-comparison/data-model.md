@@ -9,8 +9,9 @@ insured asset carries its own `policy_doc` PDF path instead, turned into a confi
 `scripts/policy_extract.py` and cached under `reports/policy/` (research.md D15). One new resolver
 rule inside `ProfileRegistry.get` (type-discriminated array addressing, research.md D13), two new
 persisted-file families (`reports/captures/*.json`/`reports/quote-comparison-*.html`, and
-`reports/policy/*.json`), five in-memory data shapes (`Step`'s four kinds, `QuoteCapture`,
-`CurrentPolicy`, `ExtractionCandidate`, `ComparisonResult`), and one state-machine change
+`reports/policy/*.json`), six in-memory data shapes (`Step`'s four kinds, `QuoteCapture`,
+`CurrentPolicy`, `ExtractionCandidate`, `PolicyReference`, `ComparisonResult`), and one
+state-machine change
 (`Errand.run()`'s dispatch loop, extended from `plan()` to `walk()`). Each is documented below, in
 the order a single apply run touches them.
 
@@ -271,7 +272,7 @@ own original design, and now the shape both `ExtractionCandidate` (below) and th
 | Field | Type | Rules |
 | :--- | :--- | :--- |
 | `insurer` | `str` | the current insurer's name, free text - read straight from the PDF's own extraction, or from the Director's own correction |
-| `premium` | `dict` with `term_months: str`, `amount: str` | both required; string-typed (matching how every other typed value in this codebase is a string, e.g. `ProfileRegistry.get`'s own return type) rather than numeric, so a captured page's own text (which is always a string) and this reference's own value compare and normalize through the same code path with no numeric-parsing special case for one side only |
+| `premium` | `dict` with `term_months: str`, `amount: str` | both required; string-typed (matching how every other typed value in this codebase is a string, e.g. `ProfileRegistry.get`'s own return type) rather than numeric, so a captured page's own text (which is always a string) and this reference's own value compare and normalize through the same code path - both sides are parsed identically per spec FR-067(a), with no numeric-parsing special case for one side only |
 | `coverages` | `list[dict]`, each with `line: str`, `limit: str`, `deductible: str` (may be empty string), `premium: str` (may be empty string) | `line` and `limit` are required per entry; `deductible`/`premium` may be absent or empty (not every coverage line prices separately from the policy's overall premium) |
 
 ### `ExtractionCandidate`
@@ -338,6 +339,7 @@ two callers, so the sentinel's own meaning is defined in exactly one place.
 | `premium` | `dict` with `term_months: str`, `amount: str` | same shape as `CurrentPolicy.premium`, so both sides of a comparison share one shape |
 | `coverages` | `list[dict]`, same shape as `CurrentPolicy.coverages` | an entry with `limit == ""` (extractor did not resolve) is a missing line, not an absent one - it still appears in the list, so the report can show *which* line was attempted and not found, rather than silently having fewer rows than expected |
 | `source_url` | `str` | `session.page.url` at the moment the `CaptureStep` executed - the quote page's own URL, for the report's provenance footer |
+| `package` | `str \| None` | the funnel's own pre-selected (default) package/tier name when the insurer's funnel offers more than one coverage tier (e.g. `"standard"`) - `None` when the funnel has no tiering at all; never a package the walk itself chose (spec FR-014) - named in the report's provenance footer alongside `fetched_at`/`source_url` when present |
 
 **Invariant - `assemble_capture`'s field-key grammar**: `assemble_capture(insurer, source_url,
 fetched_at, raw_fields: dict[str, str]) -> QuoteCapture` parses `raw_fields` (the flat mapping
@@ -377,23 +379,28 @@ orchestration point, `scripts/quote_compare.py`) treats `None` as "capture faile
 captures: dict[str, QuoteCapture]) -> ComparisonResult` - no file I/O, no vault access, no
 browser; every input is already an in-memory, parsed object. `current_policy` is `None` exactly
 when no confirmed current-policy reference existed for the targeted asset (data-model.md's own `CurrentPolicy`
-section, FR-013) - a normal, non-error input, not a sentinel the caller has to special-case around
-this function's boundary.
+section, FR-057/FR-058/FR-046) - a normal, non-error input, not a sentinel the caller has to
+special-case around this function's boundary.
 
 | Field | Type | Rules |
 | :--- | :--- | :--- |
 | `ranked_quotes` | `list[RankedQuote]` | ordered best-to-worst per FR-016's rule when `current_policy` is present, or by monthly-equivalent premium alone per FR-046 when it is `None`; empty when `captures` is empty |
 | `recommended` | `RankedQuote \| None` | `ranked_quotes[0]` when non-empty, else `None` (no captures to recommend from - not an error, see the Edge Cases in spec.md) |
-| `rule_trail` | `str` | a short, deterministic sentence built only from `recommended`'s own comparison data (spec FR-017, or FR-046's "no current policy on file" variant); empty string when `recommended is None` |
+| `rule_trail` | `str` | a short, deterministic sentence built only from `recommended`'s own comparison data (spec FR-019, or FR-046's "no current policy on file" variant); empty string when `recommended is None` |
 | `has_current_policy` | `bool` | `current_policy is not None` at the time this result was built - the report generator reads this one flag rather than re-deriving it, so `render_report`'s own logic for FR-047's marker never has to guess from `ranked_quotes`' own shape |
 
 `RankedQuote` (nested): `insurer: str`, `capture: QuoteCapture`, `line_classifications: dict[str,
-str]` (normalized coverage-line key -> one of `"better"`, `"equal"`, `"worse"`, `"missing"` when
-`current_policy` is present; an **empty dict** when it is `None` - FR-046 computes no
-classification at all in that case, rather than populating every key with a placeholder value),
+str]` (normalized coverage-line key -> one of `"better"`, `"equal"`, `"worse"`, `"missing"`, or
+`"not_comparable"` (FR-067(c)/(d)'s own class for a differing-arity or unparseable limit/
+deductible) when `current_policy` is present; an **empty dict** when it is `None` - FR-046 computes
+no classification at all in that case, rather than populating every key with a placeholder value),
 `normalized_premium: str` (the captured premium, expressed at `current_policy`'s own term length
-when one exists, or as a monthly-equivalent figure per FR-046 when it does not, for the ranking
-comparison and the report's premium row).
+when one exists, or as a monthly-equivalent figure per FR-046/FR-067(b) when it does not, for the
+ranking comparison and the report's premium row; the literal string `"premium not comparable"` when
+FR-067(a)'s own parsing rule failed for this quote, in which case `premium_comparable` below is
+`False`), `premium_comparable: bool` (`True` unless FR-067(a)'s amount/term parsing failed for this
+quote - `False` forces this quote to the end of `ranked_quotes` per FR-016, regardless of every
+other ranking factor).
 
 **Invariant - determinism**: given the same `current_policy` (or `None`) and the same `captures`
 mapping, `build_comparison` MUST return byte-identical `ranked_quotes` ordering and `rule_trail`
@@ -401,7 +408,9 @@ text, every time, on every run - no randomness, no wall-clock dependency (the wa
 appears inside a `QuoteCapture.fetched_at` value the caller already supplied, never read fresh
 inside `compare.py` itself), no dictionary-iteration-order dependency (`captures`' keys are always
 sorted before iteration, so Python's own dict-ordering-is-insertion-order behavior is never
-silently relied upon to produce a stable result).
+silently relied upon to produce a stable result), and no floating-point dependency either - every
+parse and comparison FR-067 defines uses `Decimal` exclusively (FR-067(e)), so no platform- or
+run-specific floating-point rounding can perturb the ordering.
 
 ## Report input contract
 

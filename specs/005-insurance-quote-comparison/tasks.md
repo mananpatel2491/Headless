@@ -10,7 +10,7 @@ description: "Task list for feature 005 Insurance Quote Comparison"
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/walk-capture-report.md,
 quickstart.md
 
-**Tests**: REQUIRED by the specification (SC-001 through SC-013). Test tasks are included and are
+**Tests**: REQUIRED by the specification (SC-001 through SC-023). Test tasks are included and are
 written before the module code they cover, per this repository's own Continuous Errand Validation
 principle.
 
@@ -84,12 +84,16 @@ against it. Tests first.
 - [ ] T008 Run `python -m pytest -q tests/test_steps.py tests/test_session.py -k "click or
   capture"` and make T002-T004 green against the T005-T007 implementation
 
-**T054-T059 below were added by Director amendment after this phase was first drafted (Amendments
-4 and 5: type-discriminated array addressing, and the `profile.template.json` drift test); their
-IDs are out of numeric sequence with the rest of this phase but they belong here structurally -
-foundational, general framework capability every `registry:` path benefits from, not specific to
-Progressive or to insurance. Do not renumber: every existing cross-reference to T002-T053 in this
-document and others stays valid this way.**
+**Phase 2b (part 1; T054-T059) was added by Director amendment after this phase was first drafted
+(Amendments 4 and 5: type-discriminated array addressing, and the `profile.template.json` drift
+test); their IDs are out of numeric sequence with the rest of this phase but they belong here
+structurally - foundational, general framework capability every `registry:` path benefits from, not
+specific to Progressive or to insurance. Do not renumber: every existing cross-reference to
+T002-T053 in this document and others stays valid this way. Phase 2b's own part 2 (T019b-T019k,
+the `policydoc`/`policy_extract` cluster) lives further down, inside Phase 4's own document
+section, for the same physical-placement reason this part lives inside Phase 2's - see the
+Dependencies & Execution Order section below for why both parts count as one Foundational
+sub-phase despite living in two different document sections.**
 
 - [ ] T054 [P] Write `ProfileRegistry` array-traversal tests in `tests/test_profile.py`: a dotted
   path reaching a list node selects the unique element whose `type` field equals the next segment,
@@ -107,11 +111,12 @@ document and others stays valid this way.**
 - [ ] T056 [P] Write a `RegistryAmbiguous`-prints-via-REFUSED test in `tests/test_errand.py`: a
   fixture `Errand` whose plan resolves a path that raises `RegistryAmbiguous` prints
   `REFUSED: {exc}` and exits `1`, the same pre-session treatment `RegistryMissing` already
-  receives. Then wire `RegistryAmbiguous` into `headless/errand.py`'s existing pre-session
-  exception tuple alongside `ConfigError`/`GateRefused`/`SecretMissing`/`RegistryMissing`
-  (spec FR-045)
+  receives.
+- [ ] T056b Wire `RegistryAmbiguous` into `headless/errand.py`'s existing pre-session exception
+  tuple alongside `ConfigError`/`GateRefused`/`SecretMissing`/`RegistryMissing` (spec FR-045) - the
+  implementation T056's own test proves correct.
 - [ ] T057 Run `python -m pytest -q tests/test_profile.py tests/test_errand.py -k "registry or
-  ambiguous"` and make T054/T056 green against the T055/T056 implementation
+  ambiguous"` and make T054/T056 green against the T055/T056b implementation
 - [ ] T058 [P] Write the `profile.template.json` drift test in `tests/test_profile.py` (or a new
   `tests/test_profile_template.py`, implementer's choice): load `profile.template.json` (a plain
   file read from the repository root, never through the vault, never prompting for a passphrase)
@@ -194,7 +199,7 @@ compatible (every existing errand is unaffected). Nothing insurer-specific exist
 **Goal**: one real, working insurer walk, proving the framework from Phase 3 against a live site,
 and the capture model that turns its quote page into structured data.
 
-**Independent Test**: `scripts/quote_compare.py --check` (once T029 exists) against the verified
+**Independent Test**: `scripts/quote_compare.py --check` (once T040 exists) against the verified
 landing selectors, plus this phase's own unit tests against fixture data (spec.md's own
 Independent Test for this story defers the real-site proof to Director UAT).
 
@@ -221,10 +226,13 @@ Independent Test for this story defers the real-site proof to Director UAT).
 - [ ] T019 [US2] Run `python -m pytest -q tests/test_capture.py` and make T016-T017 green against
   the T018 implementation
 
-**Phase 2b (Director amendment 6): per-asset `policy_doc` extraction, confirmation, and cache -
-`headless/policydoc.py` + `scripts/policy_extract.py`. Inserted here (after the capture model,
-before the Progressive walk itself needs it) because the comparison engine's own `current_policy`
-input now comes from this mechanism, not from hand-typed JSON - Phase 5 (US3) depends on it.**
+**Phase 2b (part 2; Director amendment 6): per-asset `policy_doc` extraction, confirmation, and
+cache - `headless/policydoc.py` + `scripts/policy_extract.py`. Inserted here (after the capture
+model, before the Progressive walk itself needs it) because the comparison engine's own
+`current_policy` input now comes from this mechanism, not from hand-typed JSON - Phase 5 (US3)
+depends on it. Continues Phase 2b's own part 1 (T054-T059, above, inside Phase 2's document
+section) - both parts together are the one Foundational sub-phase the Dependencies & Execution
+Order section below calls "Phase 2b."**
 
 - [ ] T019b [P] Add `pypdf` to `requirements.txt` (spec's new runtime dependency, plan.md's own
   Primary Dependencies note)
@@ -291,29 +299,36 @@ input now comes from this mechanism, not from hand-typed JSON - Phase 5 (US3) de
   landing page resolved (add as further `FieldPlan`/`ClickStep`/`CaptureStep` entries to T021's
   walk), which points could not be automated or verified (add as `HumanStep` entries instead),
   whether an "are you currently insured?" question appears on any page reached and, if so, its
-  selector and control shape (fill/select/check) - spec FR-035 - and whether the funnel refused
-  headless Chrome at any point (record as evidence for the standing headless-user-agent question
-  regardless of outcome) - spec FR-032/FR-033/FR-034, SC-012
+  selector and control shape (fill/select/check) - spec FR-035 - whether the funnel offers more
+  than one coverage tier or package and, if so, which one (if any) is pre-selected by default -
+  record that package's name for T023's `QuoteCapture.package` field, or, if none is pre-selected,
+  record that a `HumanStep` asking the Director to choose is required (spec FR-014) - and whether
+  the funnel refused headless Chrome at any point (record as evidence for the standing
+  headless-user-agent question regardless of outcome) - spec FR-032/FR-033/FR-034, SC-012
 - [ ] T023 [US2] Extend `ProgressiveQuoteErrand.walk()` in `headless/insurers/progressive.py` with
   whatever T022's recon actually proved: further `FieldPlan`/`ClickStep` entries for anything
   automatable (including a `FieldPlan` sourced `registry:vehicles.primary.currently_insured` if
   T022 found that question on a reachable page, spec FR-035), `HumanStep` entries for anything
-  recon could not cross or verify, and a terminal `CaptureStep` on the quote page with extractors
-  named per data-model.md's vocabulary (`premium.amount`, `premium.term_months`,
-  `coverage.<slug>.limit`/`.deductible`/`.premium`) for whatever fields the quote page actually
-  exposed. MUST NOT reference `identities.spouse.*` or `addresses.rental.*` at any registry path,
-  in any step (spec FR-036) - both are seeded in the Director's profile for a future feature, not
-  this one. If a referenced field is not yet in `profile.template.json` (repository root, already
-  exists on `main`, Amendment 5), extend that one file in this same change - never invent a second
-  schema document (spec FR-049); the drift test added in Phase 2 (T058) enforces this.
+  recon could not cross or verify (including a package-choice `HumanStep` if T022 found a
+  multi-tier page with no default selection, spec FR-014), and a terminal `CaptureStep` on the
+  quote page with extractors named per data-model.md's vocabulary (`premium.amount`, `premium.
+  term_months`, `coverage.<slug>.limit`/`.deductible`/`.premium`) for whatever fields the quote
+  page actually exposed, plus the capture's own `package` field set to whatever default package
+  T022's recon recorded (`None` when the funnel has no tiering at all). MUST NOT reference
+  `identities.spouse.*`, `addresses.rental.*`, `addresses.work.*`, or `addresses.*.dwelling_type`
+  at any registry path, in any step (spec FR-036) - all four are seeded in the Director's profile
+  for a future feature, not this one. If a referenced field is not yet in `profile.template.json`
+  (repository root, already exists on `main`, Amendment 5), extend that one file in this same
+  change - never invent a second schema document (spec FR-049); the drift test added in Phase 2
+  (T058) enforces this.
 - [ ] T024 [US2] Update `tests/test_insurers_progressive.py` to cover whatever T023 actually
   shipped (the exact steps recon proved) - this task's scope is bounded by T022's real findings,
   not predicted here. Also add the SC-015 proof: a grep or an AST-walk test over
-  `headless/insurers/progressive.py`'s own source confirming it contains no `identities.spouse.`
-  or `addresses.rental.` substring at any registry-path reference, so FR-036's guard is checked
-  mechanically, not only by the task description above.
+  `headless/insurers/progressive.py`'s own source confirming it contains no `identities.spouse.`,
+  `addresses.rental.`, `addresses.work.`, or `.dwelling_type` substring at any registry-path
+  reference, so FR-036's guard is checked mechanically, not only by the task description above.
 - [ ] T025 [US2] Run `python -m pytest -q tests/test_insurers_progressive.py`, then quickstart
-  Scenario 3 (`scripts/quote_compare.py --check`, once T029 exists) and Scenario 5 (a real `--apply`
+  Scenario 3 (`scripts/quote_compare.py --check`, once T040 exists) and Scenario 5 (a real `--apply`
   run) by hand (Director UAT): confirm the landing selectors still probe found, and confirm a
   `reports/captures/progressive-<timestamp>.json` file appears shaped per data-model.md after a
   real apply run
@@ -415,7 +430,7 @@ own Independent Test for this story).
   missing, or whose `companies` is malformed, causes the run to refuse before any mapped insurer's
   `Errand` subclass is constructed, for every mode including preview (SC-008). A missing or
   unparseable `reports/policy/vehicles-primary.json` cache file does **not** refuse - the run
-  proceeds with `current_policy = None` (spec FR-013/FR-058, T028b/T032b's own fallback behavior);
+  proceeds with `current_policy = None` (spec FR-057/FR-058/FR-046, T028b/T032b's own fallback behavior);
   this is a deliberate asymmetry from the pre-Amendment-6 design, where a malformed hand-typed
   `current_policy` value used to refuse - there is no hand-typed value to malform any more.
 - [ ] T036b [P] [US4] Write excluded-asset tests in `tests/test_quote_compare.py`: a fixture
@@ -443,7 +458,7 @@ own Independent Test for this story).
   (excluded: one line, zero insurer runs, apply-mode-only exclusion report; preview/check: run each
   mapped insurer's own `Errand.run()` in that mode plus print unmapped insurers; apply: run each
   mapped insurer's own `Errand.run()` in sequence recording exit codes, then
-  `read_freshest_capture` per mapped insurer and `capture.read_policy_reference("vehicles-primary",
+  `read_freshest_capture` per mapped insurer and `policydoc.read_policy_reference("vehicles-primary",
   ...)`, then `compare.build_comparison`, then `report.render_report`/`write_report`), the
   exit-code rule (0 when a report was written - including the exclusion-case report, 1 for a
   pre-flight refusal, 2 for a usage error)
@@ -484,7 +499,10 @@ against both fixture data (automated) and a real Progressive quote (Director UAT
   exceptions (already shipped in v0.0.4.1/v0.0.4.2, spec FR-039/FR-039b) are already recorded here
   from those hotfixes' own docs-of-record updates; if not, add sentences naming both exceptions
   and their scope so this file stays the accurate constitution of record for the vault's own
-  never-print-a-value convention.
+  never-print-a-value convention. Also add `scripts/policy_extract.py`'s own confirmed-candidate
+  printing (FR-053) to this same exception list, as a third documented exception scoped the same
+  way as `vault.py get`/`verify` - one interactive, Director-invoked command, reviewing his own
+  data on his own terminal.
 - [ ] T045 Regenerate `.specify/memory/constitution.md`: version bump assessed against the actual
   wording change once T044 and T046-T049 exist (plan.md's own note: likely PATCH, extending
   existing hard rules' reach rather than adding a new one - confirm or revise against the real
@@ -502,7 +520,11 @@ against both fixture data (automated) and a real Progressive quote (Director UAT
   framework, alongside the unchanged `plan()`-only contract for one that does not. (`vault.py`'s
   own `get NAME` row was already added to this file's Maintenance table by hotfix v0.0.4.1 on
   `main`, ahead of this feature - no action needed here for it; T052 below is the only
-  `get`-related task this delivery carries.)
+  `get`-related task this delivery carries.) Also add a Maintenance-table row for `scripts/
+  policy_extract.py` (site: none; reads `profile`'s `addresses`/`vehicles` arrays; writes
+  `reports/policy/<asset-key>.json`; the extract-confirm-cache maintenance script this delivery
+  adds, contracts section 9) - `scripts/quote_compare.py` gets its own Orchestrators-section row
+  instead, since it is not a maintenance script.
 - [ ] T048 Add the v0.0.5 Changelog row to `Project_Structure.md` listing every file touched
   (`headless/steps.py` [new], `headless/session.py`, `headless/errand.py`, `headless/preview.py`,
   `headless/profile.py` [array addressing, `RegistryAmbiguous`], `headless/capture.py` [new],
@@ -531,6 +553,26 @@ against both fixture data (automated) and a real Progressive quote (Director UAT
   file's real shape once this worktree has it (research.md D14). This is a documentation-accuracy
   check against already-shipped code - it adds no implementation and no test of any of it to this
   delivery.
+- [ ] T051 [P] Add a suite-timing check covering SC-004: run `python -m pytest -q
+  tests/test_steps.py tests/test_capture.py tests/test_compare.py tests/test_report.py
+  tests/test_insurers_progressive.py tests/test_quote_compare.py tests/test_profile.py
+  tests/test_policydoc.py tests/test_policy_extract.py` and confirm it completes in under one
+  second combined, with zero browser launches and zero passphrase prompts (matching NFR-002) - a
+  hand-run/CI timing check, not a new assertion inside the suite itself; record the measured wall
+  time in this task's own completion note.
+- [ ] T051b [P] Write the SC-011 fixture-hygiene grep as a repeatable check (alongside
+  `tests/test_no_direct_typing.py`'s own structural-grep convention, or a new small script/test):
+  a repository-wide grep for this feature's own distinctive synthetic premium/coverage-limit
+  fixture values finds them only under `tests/` and `specs/005-insurance-quote-comparison/`, never
+  inside a shipped module under `headless/` or `scripts/` (SC-011).
+- [ ] T051c [P] Write the SC-014 structural-absence check (alongside `tests/test_no_direct_typing.py`'s
+  own convention, or a new dedicated assertion): a repository-wide grep or import-graph check
+  proves no call into `vault.py get`'s underlying function exists anywhere under `headless/` or in
+  any errand script (SC-014, FR-039's own exception scope).
+- [ ] T051d [P] [US2] Extend T019c/T019i's own fixture-PDF coverage with an explicit SC-020
+  assertion in `tests/test_policy_extract.py`: a fixture PDF from which zero coverage lines could
+  be parsed does not abort `scripts/policy_extract.py`'s processing of the remaining eligible
+  assets, and does not cause `scripts/quote_compare.py`'s own report to refuse (SC-020, FR-058).
 - [ ] T053 Run the commit gate: `python -m pytest -q && python scripts/verify_structure.py &&
   git add -A && python scripts/scan_secrets.py --staged` - the orchestrator (or an Opus verifier,
   per the global agent conventions) reviews before any commit; committing itself happens on the
@@ -544,12 +586,13 @@ against both fixture data (automated) and a real Progressive quote (Director UAT
 - **US1 (Phase 3)** depends only on Phase 2 (the `Step` kinds and `Session.click`/`capture` must
   exist before `Errand.walk()`'s dispatch loop can be tested against them). Independent of Phase
   2b's array-addressing and extraction work.
-- **Phase 2b** (T019b-T019k, the array-addressing task cluster T054-T059, and the
-  `policydoc`/`policy_extract` task cluster) is its own Foundational sub-phase: it depends only on
-  Phase 2's own `Step`/`Session` work being done first (so its own test files do not collide with
-  Phase 2's), not on Phase 3-6. `compare.build_comparison`'s `current_policy: CurrentPolicy | None`
-  parameter (Phase 5) and `quote_compare.py`'s own cache read (Phase 6) both depend on
-  `headless/policydoc.py` existing (T019g) - this is Phase 2b's own critical path.
+- **Phase 2b** - part 1 (the array-addressing task cluster T054-T059, physically inside Phase 2's
+  own document section) and part 2 (T019b-T019k, the `policydoc`/`policy_extract` task cluster,
+  physically inside Phase 4's own document section) - is its own Foundational sub-phase: it depends
+  only on Phase 2's own `Step`/`Session` work being done first (so its own test files do not
+  collide with Phase 2's), not on Phase 3-6. `compare.build_comparison`'s `current_policy:
+  CurrentPolicy | None` parameter (Phase 5) and `quote_compare.py`'s own cache read (Phase 6) both
+  depend on `headless/policydoc.py` existing (T019g) - this is Phase 2b's own critical path.
 - **US2 (Phase 4)** depends on Phase 2 (the walk framework `ProgressiveQuoteErrand.walk()` is
   built against) and, for its capture-writing tasks (T017-T019), on nothing from Phase 3 - the
   capture model is independent, pure-data work. T022's recon and T023's walk extension are the

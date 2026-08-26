@@ -32,7 +32,7 @@
 ## Notes
 
 - Validation pass 1 (2026-08-25): the draft names `FieldPlan`, `ClickStep`, `HumanStep`,
-  `CaptureStep`, `#zipCode_mma`, `#qsButton_mma`, and `registry:address.home.zip` directly in the
+  `CaptureStep`, `#zipCode_mma`, `#qsButton_mma`, and `registry:addresses.home.zip` directly in the
   requirements, acceptance scenarios, and success criteria. These are the substance of what this
   feature verifiably guarantees (a walk's exact step vocabulary, the two selectors actually
   verified before this feature was scoped) and not an implementation choice being smuggled into
@@ -101,14 +101,14 @@
   left open rather than guessed, consistent with FR-032's existing "unproven selector never ships"
   discipline - the same reasoning that already governs every other selector past the landing page.
   All items otherwise still pass.
-- Validation pass 7 (post-Director-amendment, 2026-08-25, rounds 4-8): four further amendments
+- Validation pass 7 (post-Director-amendment, 2026-08-25, rounds 4-8): five further amendments
   landed after pass 6 - the Director's actual live profile schema (three JSON arrays plus
   `feature_configs`, superseding an intermediate nested-block proposal), a further schema
   finalization (`profile.template.json` as the enforced contract, nested `licence`, `dwelling_type`,
   the `"work"` address type), the deletion of hand-typed `current_policy` in favor of per-asset
   `policy_doc` PDF extraction plus mandatory Director confirmation (a genuinely new deliverable,
-  FR-050 through FR-060), the `"n/a"` exclusion sentinel (FR-061 through FR-066), and two further
-  already-shipped-elsewhere vault CLI amendments (`vault.py verify`, FR-039b). Checked each against
+  FR-050 through FR-060), the `"n/a"` exclusion sentinel (FR-061 through FR-066), and one further
+  already-shipped-elsewhere vault CLI amendment (`vault.py verify`, FR-039b). Checked each against
   the same criteria as prior passes: FR-011 through FR-013 were rewritten in place a second time
   (not a third, contradicting FR block appended) for the same reason pass 5's own note gives -
   one authoritative statement per requirement, not two under different numbers. FR-050 through
@@ -122,5 +122,26 @@
   tasks.md's own T025/T043/T052 cross-references after two internal renumbering passes (one to
   correct a dropped scenario, one to keep Scenario 3/5/7 stable); the final numbering (1-15) is
   believed consistent throughout this spec set as of this delivery, though the sheer number of
-  amendment rounds folded into one drafting session (eight) is itself worth a verifier's own
+  amendment rounds folded into one drafting session (nine) is itself worth a verifier's own
   independent cross-reference pass before this spec set is treated as final.
+- Validation pass 8 (post-verifier cross-reference pass, 2026-08-25): an Opus verifier's own
+  cross-reference review of this delivery's full spec set (commit `854d098`) found two stale
+  claims left standing in earlier passes above, corrected here rather than rewritten silently into
+  those passes' own prose (this document's own convention: a later pass corrects, it does not
+  erase, an earlier one). Pass 1's own note that "`insurers` and `current_policy` also appear
+  naming newly introduced vault items" was true when pass 1 was written, but is stale as of
+  amendment (6) (research.md D3, revised twice): neither is a vault item any more, and
+  `current_policy` no longer exists anywhere in `profile` - the requirements that named them (now
+  FR-011, FR-013) were themselves rewritten in place at the time, and this note should have been
+  too. Pass 6's own parenthetical "no shipped step references `spouse.`/`property.rental.`" used
+  `property.rental.`, D11's own superseded nested-block proposal's own naming - the shape that
+  shipped is `addresses.rental.*` (D13's array addressing), and the corresponding guard is
+  FR-036/SC-015 as they read today, not as pass 6's own prose still describes them. Neither
+  correction changes the underlying validation verdict (both items still pass the same
+  content-quality criteria under the shape that actually shipped); this pass exists only to keep
+  this checklist's own prose from misleading a reader who has not also read every research.md
+  decision it summarizes. All items otherwise still pass. Also fixed in this same pass: pass 1's
+  own `registry:address.home.zip` citation (singular `address`) was a plain transcription typo
+  against this document's own consistently plural `addresses` array, not a design that later
+  changed - corrected directly in pass 1's own text rather than left standing with a pass-8 note,
+  since there was never a prior-true claim to preserve there.

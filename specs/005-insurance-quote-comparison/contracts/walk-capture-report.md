@@ -2,14 +2,16 @@
 
 **Feature**: 005-insurance-quote-comparison | **Date**: 2026-08-25
 
-Eleven stable interfaces: the **per-mode walk table**, the **`Session.click`/`handoff`/`capture`
+Twelve stable interfaces: the **per-mode walk table**, the **`Session.click`/`handoff`/`capture`
 contracts**, the **capture and report file paths**, the **`scripts/quote_compare.py` CLI**, the
 **report HTML structure**, an **amendment to spec 004's vault CLI contract**
 (`vault.py get NAME`, already shipped elsewhere - section 6), the **registry's type-discriminated
 array addressing** (section 7), the **`profile.template.json` drift test** (section 8), the
 **`scripts/policy_extract.py` extraction/confirmation/cache contract** (section 9), the
-**`"n/a"` sentinel** (section 10), and a second **amendment to spec 004's vault CLI contract**
-(`vault.py verify`, also already shipped elsewhere - section 11).
+**`"n/a"` sentinel** (section 10), a second **amendment to spec 004's vault CLI contract**
+(`vault.py verify`, also already shipped elsewhere - section 11), and a third **amendment to spec
+004's vault CLI contract** (`vault.py set`'s piped-stdin path and 1024-character refusal, also
+already shipped elsewhere - section 12).
 
 ## 1. Per-mode walk table
 
@@ -27,6 +29,13 @@ array addressing** (section 7), the **`profile.template.json` drift test** (sect
 | `ClickStep` | `session.click(step.selector)` | `ClickFailed` (data-model.md) |
 | `HumanStep` | `session.handoff(step.instruction)` | Cannot fail in the sense the others can - a closed page is detected by `handoff()`'s own existing `is_closed()` check (spec 001), unchanged |
 | `CaptureStep` | `raw = session.capture(step.extractors)`; `capture.assemble_capture(...)`; `capture.write_capture(...)` | A missing extractor never raises (data-model.md's `Session.capture` contract); a write failure (disk full, permissions) propagates as an ordinary `OSError`, caught by `errand.py`'s existing post-session generic `except Exception` branch (class name only, no path content, matching how every other unexpected browser-layer failure is already handled) |
+
+**Multi-tier funnels**: when an insurer's funnel offers more than one coverage package (e.g.
+basic/standard/premium), the walk MUST capture the funnel's own pre-selected (default) package
+only - never a package the walk itself picks or changes - and record which one in the resulting
+`QuoteCapture.package` field (data-model.md, spec FR-014). When implementation-time recon finds a
+multi-tier page with no default selection, the walk adds a `HumanStep` asking the Director to
+choose before the terminal `CaptureStep` runs.
 
 ## 2. `Session.click` / `Session.handoff` / `Session.capture` contracts
 
@@ -132,7 +141,7 @@ an `Errand` subclass - see plan.md's Structure Decision and research.md D7 for w
    is None]` - an insurer counts as failed for the *report's* purposes only when it has never
    produced any capture, ever (not merely when *this run's* attempt returned non-zero - research.md
    D7/FR-021's "freshest capture regardless of which run produced it" rule).
-10. `current_policy = capture.read_policy_reference("vehicles-primary", reports_dir)` (data-model.md;
+10. `current_policy = policydoc.read_policy_reference("vehicles-primary", reports_dir)` (data-model.md;
     `None` when no cache file exists or it fails to parse - FR-057, FR-058, never a refusal here).
 11. `comparison = compare.build_comparison(current_policy, {insurer: read_freshest_capture(insurer,
     reports_dir) for insurer in mapped if that capture exists})` - `build_comparison` itself
@@ -180,8 +189,9 @@ One self-contained HTML document, in this section order:
    sub-run's own exit code or error text.
 6. **Provenance footer**: one line per quote actually included in the comparison table (not per
    unmapped or failed insurer, which have no capture to attribute), naming that quote's
-   `fetched_at` timestamp and `source_url` - and nothing else from that `QuoteCapture` (no premium,
-   no coverage figure duplicated here; those already appear in the table above).
+   `fetched_at` timestamp, `source_url`, and `package` when the capture has one (FR-014) - and
+   nothing else from that `QuoteCapture` (no premium, no coverage figure duplicated here; those
+   already appear in the table above).
 
 **Styling**: one `<style>` block in the document `<head>`, inline, no `@import`, no external
 `url()` reference of any kind. Color marks (better/worse/missing/equal) use CSS classes defined in
@@ -304,3 +314,30 @@ recorded here as fact, the same way section 6 records `get`. Not a `tasks.md` it
 | Output | Value-free `SEVERITY path: reason` lines only - never a field's own value |
 | Exit code | `0` clean or warnings-only; `1` any error found; refuses (no prompt at all) when the template file itself is missing |
 | Relationship to this delivery's own drift test (FR-048) | Complementary, not overlapping: `verify` checks the Director's real, live `profile` data against the template; the drift test checks this delivery's own shipped *code* (its registry paths) against the same template - one guards data, the other guards code, both against one shared contract file |
+
+## 12. Amendment to spec 004's vault CLI contract: `vault.py set`'s piped-stdin path and 1024-character refusal
+
+**Status**: already shipped, on `main`, as hotfixes v0.0.4.3 (merge `a7e2e48`, commit `4a17be6`)
+and v0.0.4.4 (merge `d55bc80`, commit `2d7799a`), ahead of and independent of this feature
+(research.md D17). This section records the shipped contract because spec 005's own quickstart
+profile-editing round trip depends on the piped-stdin path, not the hidden-prompt path, for a
+document this feature's own array-and-`feature_configs` shape produces; it is not new work this
+delivery's own `tasks.md` builds or tests. It explicitly amends spec 004's own `specs/004-age-vault/
+contracts/vault-and-cli.md` section 3 table, which did not originally describe a stdin-piped input
+path or a length refusal for `set`.
+
+| Input path | Behavior | On success | On failure |
+| :--- | :--- | :--- | :--- |
+| Interactive (`python scripts/vault.py set NAME`, a real terminal) | Prints the pipe-command hint (`pbpaste \| python scripts/vault.py set NAME`) before prompting; hidden `getpass` prompt reads one value | Value stored, re-encrypted, exit `0` | A value of 1024 or more characters: `REFUSED: value is 1024+ characters and may have been truncated by the terminal's input limit; pipe it instead: pbpaste \| python scripts/vault.py set NAME`, exit `1` - never stored |
+| Piped stdin (`pbpaste \| python scripts/vault.py set NAME`; Windows: `Get-Clipboard \| python scripts\vault.py set NAME`) | Reads the whole of stdin as the value, trailing newline stripped, no length limit | `value read from stdin (piped)` prints, then value stored, re-encrypted, exit `0` | Empty stdin: `REFUSED: empty value on stdin`, exit `1` |
+
+**Why this exists**: macOS terminals cap one canonical (line-buffered) input line at 1024 bytes; a
+value pasted past that boundary into a hidden prompt either truncates silently or stalls
+indefinitely, verified empirically on the Director's own machine. `profile.template.json`'s own
+shape (D14) is 1235+ characters as raw JSON - past that boundary by construction, not by any
+unusual editing choice - so spec 005's own quickstart profile-editing round trip (Scenario 1) MUST
+use the piped path, never the interactive one, for `set profile`.
+
+**This worktree's own gap**: `v0.0.5` forked from `main` before v0.0.4.3/v0.0.4.4 landed, so
+neither the piped-stdin acceptance nor the 1024-character refusal runs inside this specific
+worktree yet - the same gap section 6 already documents for `get`.

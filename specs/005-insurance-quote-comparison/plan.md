@@ -12,13 +12,17 @@ deterministic engine that compares any number of captures against the Director's
 and a self-contained HTML report that recommends one. Four kinds of `Step` (`FieldPlan`,
 `ClickStep`, `HumanStep`, `CaptureStep`) replace the implicit "a walk is just a list of fields to
 fill"; `Errand.walk(registry)` defaults to wrapping `plan()` so every existing errand is
-unaffected. Two new vault items (`insurers`, `current_policy`) hold data `ProfileRegistry` cannot
-address, because it refuses any dotted path that resolves to a list or an object. A new
-orchestrating script, `scripts/quote_compare.py`, composes each mapped insurer's own `Errand`
-subclass rather than reimplementing session/gate/vault machinery a second time, isolates one
-insurer's failure from the rest, and - only in apply mode, only after every insurer's walk has
-finished - runs the comparison engine and writes the report. Decisions are recorded in
-[research.md](research.md) (D1-D10, plus the recon evidence for D8).
+unaffected. The insurer list (`feature_configs.insurance.companies`) lives inside the Director's
+existing `profile` document, read by a direct JSON parse rather than through `ProfileRegistry`
+(which refuses any dotted path that resolves to a list or an object) - no new vault item holds it.
+Each insured asset's own `policy_doc` PDF path, extracted and Director-confirmed by
+`scripts/policy_extract.py` and cached under `reports/policy/`, replaces the hand-typed
+`current_policy` this plan originally proposed; there is no `current_policy` field anywhere in
+`profile`. A new orchestrating script, `scripts/quote_compare.py`, composes each mapped insurer's
+own `Errand` subclass rather than reimplementing session/gate/vault machinery a second time,
+isolates one insurer's failure from the rest, and - only in apply mode, only after every insurer's
+walk has finished - runs the comparison engine and writes the report. Decisions are recorded in
+[research.md](research.md) (D1-D17, plus the recon evidence for D8).
 
 ## Technical Context
 
@@ -36,15 +40,19 @@ reaches the report, `pathlib`). No templating engine is added - the report's HTM
 Python f-strings/string joins, the same "no framework where a function suffices" approach
 `scripts/scan_secrets.py` already established for its own standard-library-only design.
 
-**Storage**: two new persisted artifact classes, both under a new top-level `reports/` directory
+**Storage**: three new persisted artifact classes, all under a new top-level `reports/` directory
 (sibling to `previews/`, created on first use the same way): `reports/captures/<insurer>-
 <timestamp-utc>.json` (one `QuoteCapture` per successful capture, accumulating over time - never
-overwritten, only ever added to) and `reports/quote-comparison-<date>.html` (one report per apply
-run, overwriting any earlier report from the same date). Neither is a database; neither is
-version-controlled. Two new vault items (`insurers`, `current_policy`) live inside the existing
-`age`-encrypted vault file (spec 004-age-vault), read via the unchanged `get_secret(name)`
-contract - this feature adds no new persisted format to the vault itself, only two more named
-strings inside the same JSON object every vault item already lives in.
+overwritten, only ever added to), `reports/policy/<asset-key>.json` (one confirmed current-policy
+reference per insured asset, mode `0600` where the platform supports it, whole-file-replaced on
+each `scripts/policy_extract.py` confirmation - never accumulates, since an asset has exactly one
+current reference), and `reports/quote-comparison-<date>.html` (one report per apply run,
+overwriting any earlier report from the same date). None is a database; none is version-controlled.
+No new vault item: `feature_configs.insurance.companies` lives inside the Director's existing
+`profile` document (read via the unchanged `get_secret(name)` contract, then parsed directly as
+JSON, never through `ProfileRegistry`); there is no `current_policy` field anywhere in `profile`
+and none is ever planned (research.md D3, revised twice) - this feature adds no new persisted
+format to the vault itself and no new vault item at all.
 
 **Testing**: `pytest>=8` (already a dependency). Every new module (`headless/steps.py`,
 `headless/capture.py`, `headless/compare.py`, `headless/report.py`, `headless/insurers/
@@ -90,8 +98,10 @@ unchanged from the constitution's existing Hard Rule.
 
 **Scale/Scope**: the largest feature this repository has shipped a spec for. Five new package
 modules, one new insurer-walk package, one new orchestrating script, two extended existing modules
-(`headless/session.py`, `headless/errand.py`), two new vault items, a new top-level gitignored
-directory, and a new orchestration layer (composing existing `Errand` subclasses rather than
+(`headless/session.py`, `headless/errand.py`), no new vault item (`feature_configs.insurance.
+companies` lives inside the Director's existing `profile` document; the current-policy reference
+lives under `reports/policy/`, not the vault), a new top-level gitignored directory, and a new
+orchestration layer (composing existing `Errand` subclasses rather than
 extending any single one) that no prior feature needed, because every prior feature was a single
 script against a single site. See Complexity Tracking below for why this still ships as one
 release rather than being split further.
@@ -114,10 +124,12 @@ is a Polish-phase, implementation-time task, not something this spec-authoring d
 | IV. Continuous Errand Validation | PASS | Every new module's pure logic (step dispatch, capture assembly, coverage-line normalization and ranking, report rendering) gets unit tests with fixture data, no browser. The Progressive walk gains its own `--check` coverage of the landing-page selectors already verified (spec FR-031); every selector beyond the landing page ships only if implementation-time recon proves it resolves (spec FR-032) - the same "ship only working code" discipline `PATTERNS.md`'s commit-safety-gate entry already states for a different context, applied here to selectors instead of scanner patterns. |
 | V. Infrastructure-as-Code and Cost Gating | PASS, unaffected | No cloud resource of any kind. Every artifact this feature writes (captures, the report) is local disk, gitignored, $0. |
 | Gates hard rule (preview/apply/check, no submit) | PASS, extended, not weakened | The walk framework's four step kinds are a superset of what a `FieldPlan`-only errand could already do; no new mode exists, and FR-010 makes explicit, for the first time as a numbered requirement rather than an implicit practice, that the walk framework itself structurally cannot gain a submit/pay/verify/otp step type - closing that door for every future insurer walk built on it, not just this one. |
-| Secrets hard rule | PASS, extended | `insurers`/`current_policy` are vault items like any other (FR-011), subject to the same per-run passphrase gate spec 004 already established; `reports/` inherits `previews/`'s existing vault-grade classification rather than inventing a new one (FR-015). No password or payment card value is ever asked for or stored by this feature - `current_policy` is coverage and premium data, not a credential. |
-| Registry-only-source hard rule | PASS, not implicated | This rule governs what a script may *type* into a form; `insurers`/`current_policy` are read-only orchestration input, never typed anywhere - `CaptureStep` reads, it never writes. `ClickStep` types nothing; its only argument is a selector, hand-authored in the insurer's own walk module, the same way every existing `FieldPlan.selector` already is. |
+| Secrets hard rule | PASS, extended | `feature_configs.insurance.companies` lives inside the Director's existing `profile` vault item, read via the unchanged `get_secret(name)` contract and the same per-run passphrase gate spec 004 already established (FR-011); there is no separate `insurers`/`current_policy` vault item, and no `current_policy` field anywhere in `profile` (FR-013) - each insured asset's own `policy_doc` PDF is instead extracted and Director-confirmed under `reports/policy/`, itself inheriting `previews/`'s existing vault-grade classification (FR-015, FR-056). No password or payment card value is ever asked for or stored by this feature - a policy PDF's coverage and premium figures are not a credential. |
+| Registry-only-source hard rule | PASS, extended | This rule governs what a script may *type* into a form; `CaptureStep` reads, it never writes, and `ClickStep` types nothing - its only argument is a selector, hand-authored in the insurer's own walk module, the same way every existing `FieldPlan.selector` already is. Extended, not merely unaffected, because this delivery is the first to name specific registry paths a shipped walk MUST NEVER reference regardless of whether the registry itself would resolve them (`identities.spouse.*`, `addresses.rental.*`, `addresses.work.*`, `addresses.*.dwelling_type` - FR-036) - a structural narrowing of what "sourced from the registry" is allowed to mean for this delivery's own shipped code, not present in any typing-only rule before this feature. |
+| Nothing an LLM derives is ever a report figure (reading/comparing) | PASS, extended | CLAUDE.md's Secrets section states "Nothing an LLM derives is ever typed" for the *typing* surface; FR-020 and FR-051 extend the same rule to the *reading and comparing* surface this feature is the first to touch - the comparison engine (FR-020) and the PDF-extraction heuristics (FR-051) both contain no LLM call anywhere in their path, so a premium, a limit, a deductible, or a ranking position can never originate from anything a model derived, confirmed by SC-022's own repository-wide grep. |
+| Secrets hard rule - value-free-output convention | PASS, documented exception | `scripts/policy_extract.py` prints an extraction candidate to the Director's own terminal before caching it (FR-053) - a deliberate, sole-purpose exception to this codebase's usual value-free-output convention, the same documented exception class `vault.py get` already established (FR-039) rather than a new, unreviewed carve-out: scoped to this one interactive, Director-invoked command, reviewing his own policy data on his own terminal, never written to a log, a preview artifact, or a report. |
 | Browser hard rule | PASS, unaffected | No new browser-launch path; `Session.click`/`Session.capture` are new operations on the same session `Session.fill`/`Session.probe` already own. Headless-by-default for preview/check, windowed-and-quiet-until-handoff for apply, are unchanged; a `HumanStep` reuses the existing `handoff()` surfacing behavior rather than inventing a second one. |
-| Public repository hygiene | PASS, unaffected | No new secret-shaped pattern this feature's own code introduces beyond what `insurers`/`current_policy`'s test fixtures need to stay obviously synthetic (spec FR-030, `.scanignore`'s existing convention) - no change to `scan_secrets.py` itself is anticipated, though the implementation delivery must re-verify this once real fixture text exists. |
+| Public repository hygiene | PASS, unaffected | No new secret-shaped pattern this feature's own code introduces beyond what this feature's own test fixtures (`feature_configs.insurance.companies`, `QuoteCapture`, `CurrentPolicy`) need to stay obviously synthetic (spec SC-011's own repository-wide grep, `.scanignore`'s existing convention) - no change to `scan_secrets.py` itself is anticipated, though the implementation delivery must re-verify this once real fixture text exists. |
 | Spec-driven workflow | PASS | This delivery runs specify only (spec-authoring, this worktree, this session) on `v0.0.5`, per the mananUtils worktree protocol and this delivery's explicit brief. Plan, research, data-model, contracts, quickstart, tasks, and the requirements checklist are all produced in this same delivery, per this feature's brief - matching the shape spec 004's own delivery used, though unlike that delivery this one does not also implement the code; implementation, verification, and merge are separate, later, explicitly authorized runs. |
 
 No violations; Complexity Tracking (below) documents why this feature's size is justified rather
@@ -138,7 +150,7 @@ requires a second insurer to be addable later without touching this feature's ow
 specs/005-insurance-quote-comparison/
 ├── spec.md
 ├── plan.md                            # This file
-├── research.md                        # Phase 0: decisions D1-D10, recon evidence
+├── research.md                        # Phase 0: decisions D1-D17, recon evidence
 ├── data-model.md                      # Phase 1: Step union, mode matrix, QuoteCapture,
 │                                       #   CurrentPolicy, ComparisonResult, Errand.run() delta
 ├── quickstart.md                      # Phase 1: the Director's UAT script
@@ -168,11 +180,13 @@ headless/
 │                                #   preview-mode records FieldPlan sources (unchanged) plus
 │                                #   lists other steps by kind/name; trailing handoff unchanged
 ├── capture.py                  # NEW: QuoteCapture, CurrentPolicy dataclasses;
-│                                #   parse_current_policy(raw_json) -> CurrentPolicy;
-│                                #   parse_insurers(raw_json) -> list[str]; assemble_capture(
-│                                #   insurer, source_url, fetched_at, raw_fields) -> QuoteCapture;
-│                                #   write_capture/read_freshest_capture; QuoteInputError
-│                                #   (mirrors ProfileError's position-only-message shape)
+│                                #   parse_companies(raw_json_fragment: object) -> list[str];
+│                                #   assemble_capture(insurer, source_url, fetched_at, raw_fields)
+│                                #   -> QuoteCapture; write_capture/read_freshest_capture;
+│                                #   QuoteInputError (mirrors ProfileError's position-only-message
+│                                #   shape). No parse_current_policy/parse_insurers - current_policy
+│                                #   is never parsed from profile (deleted, D3 revised twice); the
+│                                #   confirmed reference is built by headless/policydoc.py instead
 ├── compare.py                  # NEW: the coverage-line alias table; classify_line();
 │                                #   rank_quotes(); ComparisonResult; build_comparison(
 │                                #   current_policy: CurrentPolicy | None, captures) ->
@@ -220,8 +234,17 @@ tests/
 ├── test_errand.py              # UPDATED: walk() default-wraps-plan() test; the four-step-kind
 │                                #   apply dispatch; preview-mode's zero-navigation-past-landing
 │                                #   proof (SC-001); the HumanStep window-stays-visible proof
-├── test_capture.py             # NEW: parse_current_policy/parse_insurers (valid + malformed,
-│                                #   SC-008), assemble_capture, write/read-freshest-capture
+├── test_profile.py             # UPDATED: ProfileRegistry array-element addressing
+│                                #   (type-discriminated selection, RegistryAmbiguous, SC-016),
+│                                #   plus the profile.template.json drift test (SC-018)
+├── test_capture.py             # NEW: parse_companies (valid + malformed, SC-008),
+│                                #   assemble_capture, write/read-freshest-capture
+├── test_policydoc.py           # NEW: ExtractionCandidate/extract_candidate,
+│                                #   confirm_candidate, PolicyReference/cache (SC-019, SC-021),
+│                                #   is_excluded
+├── test_policy_extract.py      # NEW: scripts/policy_extract.py's own orchestration
+│                                #   (eligible-vs-excluded asset discovery SC-023, single-asset
+│                                #   CLI argument, single passphrase prompt)
 ├── test_compare.py             # NEW: alias-table normalization, per-line classification,
 │                                #   ranking rule (SC-006), rule-trail text construction
 ├── test_report.py              # NEW: HTML structure, zero-external-reference proof (SC-002),
@@ -233,11 +256,14 @@ tests/
 └── test_quote_compare.py       # NEW: orchestrator tests against fixture Errand subclasses
                                   #   (unmapped-insurer zero-Session proof SC-007, one-insurer-
                                   #   failure-does-not-stop-others proof SC-005, malformed-
-                                  #   current_policy-refuses-before-any-Session proof SC-008)
+                                  #   companies-refuses-before-any-Session proof SC-008)
 
-CLAUDE.md                       # UPDATED (Polish): Secrets section names insurers/current_policy
-                                  #   and reports/'s vault-grade classification; Browser section
-                                  #   unchanged (no new browser-launch path)
+CLAUDE.md                       # UPDATED (Polish): Secrets section names feature_configs.
+                                  #   insurance.companies (living inside profile, not a separate
+                                  #   item), the deletion of current_policy in favor of per-asset
+                                  #   policy_doc extraction and confirmation, and reports/'s
+                                  #   (including reports/policy/'s) vault-grade classification;
+                                  #   Browser section unchanged (no new browser-launch path)
 .specify/memory/constitution.md # UPDATED (Polish): regenerated distillation; version bump
                                   #   assessed at implementation time against the actual wording
                                   #   change (likely PATCH: this feature extends existing hard

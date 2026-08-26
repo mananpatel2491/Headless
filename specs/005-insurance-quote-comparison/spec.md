@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-25
 
-**Status**: Draft (amended 2026-08-25, five rounds, mid-delivery - see the amendment note below)
+**Status**: Draft (amended 2026-08-25, nine rounds, mid-delivery - see the amendment note below)
 
 **Input**: User description: "The feature is not to get a quote from Progressive, but get quotes
 from multiple insurance companies. My profile will contain the list of insurance companies I
@@ -13,22 +13,40 @@ quote. You will also have a reference of my existing quote (the one I am using r
 you can compare each benefit line by line, and your goal is to recommend me the best quote to
 go for, showing the comparison in nice pretty HTML."
 
-**Amendment note**: this spec was drafted, then amended five times in the same session as the
+**Amendment note**: this spec was drafted, then amended nine times in the same session as the
 Director's own live profile document and tooling evolved. Every FR number below is final and
-continuous (FR-001 through FR-049, appended in amendment order, never renumbered); where a later
-amendment corrected an earlier one's design, the earlier FR's own text was rewritten in place
-(never left standing alongside a contradicting later FR) and the correction is recorded in
-research.md under its own dated decision. The five amendments, briefly: (1) `scripts/vault.py get
-NAME`, shipped elsewhere as hotfix v0.0.4.1, recorded here as fact; (2) an initial registry
-reshape proposal (nested blocks under `vehicle`/`spouse`/`property`), superseded by (4); (3)
-`identity.currently_insured` joins the Progressive walk, and `spouse`/rental-property data is
+continuous (FR-001 through FR-066, plus FR-039b and FR-039c, none renumbered); FR-046 and FR-047
+were inserted mid-list - their own amendment round decided the comparison engine and report
+generator each needed a documented no-current-policy fallback after FR-021/FR-025 had already been
+assigned, so they were given the next unused numbers rather than renumbering anything around them,
+the same never-renumber discipline every amendment below follows. Where a later amendment corrected
+an earlier one's design, the earlier FR's own text was rewritten in place (never left standing
+alongside a contradicting later FR) and the correction is recorded in research.md under its own
+dated decision. The nine amendments, briefly: (1) `scripts/vault.py get NAME` and `scripts/vault.py
+verify`, shipped elsewhere as hotfixes v0.0.4.1 and v0.0.4.2, recorded here as fact; (2) an initial
+registry reshape proposal (nested blocks under `vehicle`/`spouse`/`property`), superseded by (4);
+(3) `identity.currently_insured` joins the Progressive walk, and `spouse`/rental-property data is
 seeded but not wired in this delivery; (4) the Director's actual live profile document turned out
 to use three top-level JSON arrays (`identities`, `addresses`, `vehicles`), each element
-discriminated by a `type` field, plus a single `insurance` object replacing the separate
-`insurers`/`current_policy` vault items this spec originally proposed - this is the shape every
-FR below now describes; (5) `profile.template.json`, a repository-root file shipped on `main`
-(not yet in this worktree), is the enforced contract for that shape, and this delivery's own test
-suite is required to prove every path a shipped walk references actually resolves against it.
+discriminated by a `type` field, resolved through `ProfileRegistry`'s own type-discriminated array
+addressing - this array shape is what every FR below describes for `identities`/`addresses`/
+`vehicles`, but the single `insurance` object this round originally proposed alongside it
+(replacing the separate `insurers`/`current_policy` vault items this spec first proposed) is itself
+superseded by (6) and (8) below; (5) `profile.template.json`, a repository-root file shipped on
+`main` (not yet in this worktree), is the enforced contract for that shape, and this delivery's own
+test suite is required to prove every path a shipped walk references actually resolves against it;
+(6) `current_policy` is deleted from `profile` entirely - each insured asset's own `policy_doc` PDF
+path is extracted and Director-confirmed instead (`scripts/policy_extract.py`,
+`headless/policydoc.py`), and the insurer list moves one level deeper, to
+`feature_configs.insurance.companies`; (7) the literal string `"n/a"` in `currently_insured` or
+`policy_doc` becomes a defined, Director-decided exclusion sentinel, distinct from the field being
+merely absent; (8) `addresses[]` gains a `dwelling_type` field and a third element type, `"work"`,
+both seeded now for a future feature and excluded from this delivery's own scope by their own
+sentinels; (9) `scripts/vault.py set`'s hidden prompt is confirmed to refuse any interactive value
+of 1024 or more characters (the terminal's own canonical input-line limit) and to accept the same
+value instead over piped stdin - both already shipped elsewhere as hotfixes v0.0.4.3 and v0.0.4.4,
+recorded here as fact (FR-039c) because this feature's own quickstart profile-seeding round trip
+needs the pipe path, not the hidden-prompt path, for a document this delivery's own shape produces.
 
 ## Why
 
@@ -410,7 +428,15 @@ masked plan and states `geico` has no registered walk, with zero browser activit
 
 - **FR-014**: A successful `CaptureStep` at the end of an insurer's walk, in apply mode, MUST
   produce a `QuoteCapture` record and write it as JSON to
-  `reports/captures/<insurer>-<timestamp-utc>.json`.
+  `reports/captures/<insurer>-<timestamp-utc>.json`. When an insurer's funnel offers more than one
+  coverage tier or package (e.g. basic/standard/premium), the walk MUST capture the funnel's own
+  pre-selected (default) package, never a package the walk itself chooses or changes -
+  implementation-time recon (FR-032) records which package that is, and the `QuoteCapture`'s own
+  `package` field (data-model.md) names it so the report's provenance can state which tier the
+  captured premium and coverage lines actually describe. If recon finds the funnel reaches a
+  multi-tier page with no package pre-selected by default, the walk MUST add a `HumanStep` asking
+  the Director to pick one before the terminal `CaptureStep` runs - the walk MUST NOT guess or
+  default to an arbitrary tier itself.
 - **FR-015**: `reports/` (both `captures/` and the rendered HTML report) MUST be excluded from
   version control and MUST carry the same vault-grade local-data classification `previews/`
   already carries under `CLAUDE.md`'s Secrets section - never committed, shared, or attached
@@ -421,15 +447,21 @@ masked plan and states `geico` has no registered walk, with zero browser activit
 
 - **FR-016**: Quotes MUST be ranked by, in order: (1) no coverage line worse than
   `current_policy`, strictly ahead of any quote with at least one worse line; (2) among quotes
-  tied on (1), a lower premium normalized to `current_policy`'s own term length; (3) ties on both
-  broken by fewer missing coverage lines. (When `current_policy` is absent, FR-046 governs
-  instead.)
+  tied on (1), a lower premium normalized to `current_policy`'s own term length per FR-067(b);
+  (3) ties on both broken by fewer missing coverage lines. A quote whose `premium.amount` or
+  `premium.term_months` fails FR-067(a)'s parsing rule MUST be ranked last, after every quote
+  whose premium parsed, with the reason "premium not comparable" shown in the report - never a
+  crash, never a guessed figure. (When `current_policy` is absent, FR-046 governs instead.)
 - **FR-017**: Coverage line names MUST be normalized through a small, hand-authored alias table
   before a captured quote's lines are matched against `current_policy`'s own lines, so wording
   differences between insurers do not defeat the comparison.
 - **FR-018**: Each `current_policy` coverage line MUST be classified, per captured quote, as
-  better, equal, worse, or missing relative to that same normalized line - missing exactly when
-  the captured field's value is an empty string.
+  better, equal, worse, or missing relative to that same normalized line, using FR-067(c)'s
+  limit-comparison rule and FR-067(d)'s deductible-comparison rule - missing exactly when the
+  captured field's value is an empty string; a line whose limit or deductible is "not comparable"
+  per FR-067(c)/(d) (a differing tuple arity, or either side unparseable) MUST be classified in
+  its own "not comparable" class - never counted as better, worse, or equal, and never silently
+  dropped from the report.
 - **FR-019**: The top-ranked quote MUST be presented as the recommendation together with a rule
   trail: a short, deterministic string built only from the same comparison data (never a
   free-form or LLM-authored justification) stating the rule that produced the ranking.
@@ -444,9 +476,36 @@ masked plan and states `geico` has no registered walk, with zero browser activit
   targeted asset (no cache file under `reports/policy/` at all, or a cache file that fails to
   parse - FR-057/FR-058 name every cause), the comparison engine MUST NOT compute a
   better/worse/equal/missing classification for any coverage line - there is nothing to compare
-  against. It MUST still rank captured quotes, by monthly-equivalent premium (`amount` divided by
-  `term_months`) ascending, and the rule trail MUST state plainly that no current-policy reference
-  was on file and premium alone drove the ranking.
+  against. It MUST still rank captured quotes, by monthly-equivalent premium computed per
+  FR-067(b) (`Decimal(amount) / term_months`, quantized to 2 decimal places, `ROUND_HALF_UP`)
+  ascending, with any quote whose premium fails FR-067(a)'s parsing rule ranked last per FR-016,
+  and the rule trail MUST state plainly that no current-policy reference was on file and premium
+  alone drove the ranking.
+- **FR-067** *(added, User Story 3, comparison arithmetic - mid-list insertion, see the amendment
+  note above)*: The comparison engine's parsing and normalization of every comparable figure MUST
+  follow these rules exactly, so the byte-identical-output invariant data-model.md's
+  `build_comparison` contract already requires is achievable with pure `Decimal` arithmetic and no
+  float:
+  (a) **Amount and term parsing**: a `premium.amount` value is parsed by stripping currency
+  symbols, commas, and spaces, then parsing the remainder as a decimal number; `premium.
+  term_months` is parsed as a positive integer. If either parse fails for a quote, that quote MUST
+  be ranked last (FR-016) with the reason "premium not comparable" shown in the report - never a
+  crash, never a guessed figure.
+  (b) **Normalized premium**: the normalized premium is `Decimal(amount) / term_months`, quantized
+  to 2 decimal places using `ROUND_HALF_UP`, presented in the report as a monthly figure. The
+  report MUST state that this normalization was applied.
+  (c) **Limit comparison**: a limit string parses to a tuple of integers by splitting on `"/"`,
+  stripping `$` and commas from each part, and multiplying a part by 1000 when it ends in `k`/`K`.
+  Two limits are compared only when their tuples have the same arity: element-wise `>=` on every
+  position is "better or equal"; all-equal is "equal"; any position lower is "worse". A different
+  arity between the two sides, or a side that fails to parse, classifies that line "not comparable"
+  - its own class, never counted as better, worse, or equal, and listed distinctly in the report.
+  (d) **Deductible comparison**: a deductible string parses the same way as an amount (FR-067(a)'s
+  stripping rule) to a single number; a LOWER parsed deductible is better. An empty deductible on
+  either side is "not comparable".
+  (e) **Determinism**: every parse and every comparison this requirement defines uses Python's
+  `Decimal` type only, never `float` - this is what makes data-model.md's `build_comparison`
+  byte-identical-output invariant achievable in practice, not only in principle.
 
 **Report generation (User Story 3)**
 
@@ -528,17 +587,22 @@ masked plan and states `geico` has no registered walk, with zero browser activit
   property-insurance or commute-aware auto spec - FR-065, FR-066) and MUST NOT be wired into any
   walk before that future spec authorizes it.
 
-**Vault CLI amendments (spec 004, shipped in v0.0.4.1 and v0.0.4.2, recorded here 2026-08-25)**
+**Vault CLI amendments (spec 004, shipped in v0.0.4.1 through v0.0.4.4, recorded here 2026-08-25)**
 
-**Status**: neither `scripts/vault.py get NAME` nor `scripts/vault.py verify` is something spec
-005 asks to be built. The Director wanted `get` immediately, so the orchestrator shipped it as
-hotfix v0.0.4.1 directly on `main` (merge `f35988e`, commit `9cc3b20`, three tests,
-`scripts/README.md` and `Project_Structure.md` already updated there) ahead of this delivery; once
-real-data-vs-template validation was also wanted, `verify` shipped the same way as hotfix v0.0.4.2.
-FR-037 through FR-039b below record both contracts as already-shipped fact, because spec 005's own
-quickstart (below) uses both in the profile-editing and validation workflow - neither is new work
-for `/speckit-implement` to build. This worktree's own `v0.0.5` branch does not yet contain either
-hotfix (it forked before both landed); see research.md D12 for how that gap is expected to close.
+**Status**: none of `scripts/vault.py get NAME`, `scripts/vault.py verify`, or `set`'s
+piped-stdin/1024-character-refusal behavior is something spec 005 asks to be built. The Director
+wanted `get` immediately, so the orchestrator shipped it as hotfix v0.0.4.1 directly on `main`
+(merge `f35988e`, commit `9cc3b20`, three tests, `scripts/README.md` and `Project_Structure.md`
+already updated there) ahead of this delivery; once real-data-vs-template validation was also
+wanted, `verify` shipped the same way as hotfix v0.0.4.2 (merge `cc01246`); once this delivery's
+own `profile.template.json`-shaped document proved too large for `set`'s hidden interactive
+prompt, the piped-stdin path and the 1024-character refusal shipped as hotfix v0.0.4.3 (merge
+`a7e2e48`), and the prompt's own pipe-command hint shipped as hotfix v0.0.4.4 (merge `d55bc80`).
+FR-037 through FR-039c below record all four contracts as already-shipped fact, because spec 005's
+own quickstart (below) uses every one of them in the profile-editing and validation workflow - none
+is new work for `/speckit-implement` to build. This worktree's own `v0.0.5` branch does not yet
+contain any of the four hotfixes (it forked before all of them landed); see research.md D12 and
+D17 for how that gap is expected to close.
 
 - **FR-037**: `scripts/vault.py` provides a `get NAME` subcommand that decrypts the vault (one
   passphrase prompt) and prints only the raw string value of item `NAME` to stdout, followed by a
@@ -570,6 +634,18 @@ hotfix (it forked before both landed); see research.md D12 for how that gap is e
   live `profile` document against the template; the drift test checks this delivery's own shipped
   *code* (its registry paths) against the same template - one guards data, the other guards code,
   both against the one shared contract file.
+- **FR-039c**: `scripts/vault.py set NAME`'s hidden interactive prompt refuses any value of 1024
+  or more characters (`REFUSED: value is 1024+ characters and may have been truncated by the
+  terminal's input limit; pipe it instead: pbpaste | python scripts/vault.py set <name>`) rather
+  than silently storing a value the terminal's own canonical input-line limit may have already
+  truncated; the same command also accepts the value on piped stdin instead (`pbpaste | python
+  scripts/vault.py set profile`; Windows: `Get-Clipboard | python scripts\vault.py set profile`),
+  which has no such limit, and the interactive prompt itself prints the pipe-command hint before
+  asking for a value, not only after a refusal. Shipped alongside `get`/`verify`, as hotfixes
+  v0.0.4.3 and v0.0.4.4 (`main`, not yet in this worktree), and also recorded rather than built by
+  this delivery (research.md D17) - `profile.template.json`'s own shape is 1235+ characters as raw
+  JSON, past the 1024-character boundary by construction, so spec 005's own quickstart profile-
+  editing round trip depends on this piped path working, not the hidden-prompt path.
 
 **Type-discriminated array addressing in `ProfileRegistry.get` (framework requirement, added 2026-08-25)**
 
@@ -751,14 +827,16 @@ insurance feature reading any asset's data MUST honor it the same way this deliv
 - **Walk**: the ordered list of `Step`s an errand's `walk(registry)` returns. Every mode
   interprets the same list differently (data-model.md's mode matrix); there is exactly one walk
   per insurer's `Errand` subclass in this delivery.
-- **`profile`'s array-and-object shape**: the Director's existing vault item now holds three
-  top-level JSON arrays (`identities`, `addresses`, `vehicles`, each element discriminated by a
-  `type` field) and one top-level `insurance` object (`companies`, a JSON array of insurer id
-  strings; `current_policy`, optional, the Director's existing policy reference). `insurance` is
-  read by the orchestrator through a direct JSON parse of the whole `profile` document, never
-  through `ProfileRegistry` (FR-011); the three arrays are read through `ProfileRegistry`'s
-  extended, array-element-addressing traversal (FR-040 through FR-044) exactly like any other
-  registry path.
+- **`profile`'s array-and-object shape**: the Director's existing vault item holds three top-level
+  JSON arrays (`identities`, `addresses`, `vehicles`, each element discriminated by a `type` field)
+  and one top-level `feature_configs` object, holding this feature's own `insurance.companies`
+  sub-object (a JSON array of insurer id strings). There is no `current_policy` field anywhere in
+  `profile`, and none is ever planned (FR-013, research.md D3, second revision) - each insured
+  asset's own `policy_doc` PDF path is the reference instead, extracted and Director-confirmed
+  under `reports/policy/` (FR-050 through FR-060). `feature_configs.insurance` is read by the
+  orchestrator through a direct JSON parse of the whole `profile` document, never through
+  `ProfileRegistry` (FR-011); the three arrays are read through `ProfileRegistry`'s extended,
+  array-element-addressing traversal (FR-040 through FR-044) exactly like any other registry path.
 - **QuoteCapture**: the structured record one insurer's successful `CaptureStep` produces: the
   insurer id, when it was fetched, the premium, the coverage lines it found, and the quote page's
   URL. Written to `reports/captures/`, never committed.
@@ -793,7 +871,9 @@ insurance feature reading any asset's data MUST honor it the same way this deliv
   independently-configured insurer's walk from completing in the same invocation.
 - **SC-006**: A unit test proves the ranking rule orders a quote with no coverage line worse than
   `current_policy` ahead of a cheaper quote that has one worse line, and among two quotes with no
-  worse line, orders the lower normalized-premium quote first.
+  worse line, orders the lower normalized-premium quote first (FR-067(b)'s `Decimal`-based
+  normalization); a further unit test proves a quote whose premium fails FR-067(a)'s parsing rule
+  ranks last, tagged "premium not comparable", never causing a crash or a guessed figure.
 - **SC-007**: A unit test proves an unmapped insurer id produces exactly one "not mapped yet"
   report row and zero attempted `Session`, `Config`, or browser-process constructions for that id.
 - **SC-008**: A unit test proves a malformed `insurance` object (missing, or `companies` malformed)
@@ -822,12 +902,6 @@ insurance feature reading any asset's data MUST honor it the same way this deliv
 - **SC-015**: A repository-wide grep proves no shipped `headless/insurers/progressive.py` step
   references `identities.spouse.`, `addresses.rental.`, `addresses.work.`, or `.dwelling_type` at
   any registry path (FR-036).
-- **SC-023**: A unit test proves an asset whose `policy_doc` is `"n/a"` is skipped by
-  `scripts/policy_extract.py` with no note and no error, indistinguishable in outcome from an
-  asset with no `policy_doc` field at all (FR-062); a separate unit test proves
-  `scripts/quote_compare.py` performs zero insurer journeys and writes a report stating the
-  exclusion when the targeted asset's `currently_insured` or `policy_doc` is `"n/a"` (FR-063,
-  FR-064).
 - **SC-016**: A unit test proves `ProfileRegistry.get("identities.self.first_name")` (and every
   sibling path the Progressive walk uses) resolves correctly against a fixture array-shaped
   document, and a fixture document with two elements sharing the same `type` value raises
@@ -854,6 +928,12 @@ insurance feature reading any asset's data MUST honor it the same way this deliv
 - **SC-022**: A repository-wide grep or import-graph check proves no LLM client, API call, or
   prompt-construction code exists anywhere in `headless/policydoc.py` or
   `scripts/policy_extract.py` (FR-051).
+- **SC-023**: A unit test proves an asset whose `policy_doc` is `"n/a"` is skipped by
+  `scripts/policy_extract.py` with no note and no error, indistinguishable in outcome from an
+  asset with no `policy_doc` field at all (FR-062); a separate unit test proves
+  `scripts/quote_compare.py` performs zero insurer journeys and writes a report stating the
+  exclusion when the targeted asset's `currently_insured` or `policy_doc` is `"n/a"` (FR-063,
+  FR-064).
 
 ## Assumptions
 

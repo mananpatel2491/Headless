@@ -46,10 +46,11 @@ considered and rejected, the same shape `specs/003-login-persistence/research.md
   v0.0.3 (spec 003-login-persistence): a seeded login persists across runs through the
   launched-profile session-cookie mechanism.
 
-This is the evidence base for D1 through D15 (D11 through D15 were all added 2026-08-25,
-mid-delivery, across six rounds of Director amendment - see each entry's own dating; D11 is
-superseded by D13 and left standing only as historical record; D3 was revised twice in place, most
-recently to delete `current_policy` from `profile` entirely and replace it with D15's own
+This is the evidence base for D1 through D18 (D11 through D18 were all added 2026-08-25,
+mid-delivery, across the amendment rounds spec.md's own amendment note enumerates - see each
+entry's own dating; D11 is superseded by D13 and left standing only as historical record; D3 was
+revised twice in place, most recently to delete `current_policy` from `profile` entirely and
+replace it with D15's own
 extraction-and-confirmation mechanism).
 
 ## D1. Program shape: framework plus exactly one mapped insurer this delivery
@@ -57,8 +58,8 @@ extraction-and-confirmation mechanism).
 - **Decision**: spec 005 delivers (a) the walk framework, (b) the quote capture model, (c) the
   deterministic comparison engine, (d) the HTML report generator, and (e) exactly one mapped
   insurer, Progressive. Every additional insurer is its own future spec (006 or later). The report
-  renders a "not mapped yet" row for any insurer on the Director's `insurers` list with no
-  registered walk.
+  renders a "not mapped yet" row for any insurer on the Director's `feature_configs.insurance.
+  companies` list with no registered walk.
 - **Rationale**: the Director's own brief describes a program ("get quotes from multiple
   insurance companies"), not a single errand - but each insurer's quote funnel is an independent,
   unrecon'd surface with its own selectors, its own bot-defense behavior, and its own unknown
@@ -282,8 +283,10 @@ amendment in this document corrects rather than accumulates.**
 
 - **Decision**: `scripts/quote_compare.py` is not itself an `Errand` subclass. It parses the
   standard mode flags via the existing `add_mode_arguments()` surface, reads and parses
-  `insurers`/`current_policy` from its own vault access (refusing before any browser session opens
-  on malformed input), then for each insurer id present in the code-level `WALK_REGISTRY`
+  `feature_configs.insurance.companies` from its own vault-read parse of `profile` (refusing before
+  any browser session opens on malformed input) and the confirmed current-policy reference from
+  `reports/policy/` (never a refusal when it is absent or unparseable - FR-046/FR-058), then for
+  each insurer id present in the code-level `WALK_REGISTRY`
   (`headless/insurers/__init__.py`), calls that insurer's own `Errand` subclass's `.run()` with an
   argv forwarding the orchestrator's own parsed flags - reusing that subclass's entire existing
   machinery (config resolution, its own vault access, the pre-resolution loop, gate checks, preview
@@ -320,7 +323,7 @@ amendment in this document corrects rather than accumulates.**
 ## D8. Progressive walk depth: implementation-time recon, bounded and synthetic
 
 - **Decision**: the shipped Progressive walk begins with the two selectors already verified before
-  this feature was scoped (`#zipCode_mma` filled from `registry:address.home.zip`,
+  this feature was scoped (`#zipCode_mma` filled from `registry:addresses.home.zip`,
   `#qsButton_mma` clicked) and continues only as far as implementation-time recon actually proves.
   That recon is authorized for at most three headless, scratch-Chrome-profile walks against the
   real Progressive site, using wholly synthetic data - never the Director's real identity, address,
@@ -364,9 +367,9 @@ amendment in this document corrects rather than accumulates.**
   submit/pay/verify/otp step type, or ever click a purchase control, in this walk or any future
   insurer walk built on this framework; does not email, share, or transmit the rendered report
   anywhere; does not attempt any user-agent spoof or stealth-browser workaround if Progressive's
-  funnel refuses headless Chrome; does not parse a PDF or scanned policy document (`current_policy`
-  is hand-seeded JSON); and does not build any GUI, dashboard, or notification mechanism beyond the
-  HTML file itself.
+  funnel refuses headless Chrome; does not OCR a scanned-image PDF (see D15's own out-of-scope
+  note); and does not build any GUI, dashboard, or notification mechanism beyond the HTML file
+  itself.
 - **Rationale**: each of these was named explicitly in the brief this feature was scoped from, as a
   boundary already decided rather than a question this research phase needed to resolve, the same
   shape spec 003's D9 and spec 004's D10 both already used for their own out-of-scope items.
@@ -669,3 +672,132 @@ should be treated as this delivery's shipped shape.**
   simply does not parse cleanly is an expected, ordinary outcome of best-effort extraction against
   real-world documents, not a data-entry mistake, and should degrade the same way an insurer's own
   walk failure already does rather than blocking the whole report).
+
+## D16. The `"n/a"` sentinel, `dwelling_type`, and the `"work"` address type (amendments 7 and 8, Director decision, 2026-08-25)
+
+- **Decision**: the literal string `"n/a"` in an asset's `currently_insured` or `policy_doc` field
+  (amendment 7) is an explicit, Director-decided exclusion - distinct from the field being merely
+  absent, which means only "no data yet." `scripts/policy_extract.py` and `scripts/quote_compare.
+  py` both treat it as a sentinel, never a real value (spec FR-061 through FR-064). Separately
+  (amendment 8), `addresses[]` elements gain an optional `dwelling_type` field (a dwelling
+  classification, e.g. `single_family`/`condo`/`apartment`/`townhouse`/`commercial` - named
+  `dwelling_type` rather than `type` because `type` is already the array's own selection
+  discriminator, D13) and a third element type, `"work"` (`dwelling_type` `"commercial"`, both
+  `currently_insured` and `policy_doc` set to the `"n/a"` sentinel by construction). Both fields
+  are seeded in `profile.template.json` now, for a future feature, and neither is read by anything
+  this delivery ships (spec FR-036, FR-065, FR-066).
+- **Rationale**: an absent field and an explicitly excluded one are different states a future
+  feature (or the Director himself, reading his own document later) needs to tell apart - "no data
+  yet, someone forgot to fill this in" is a data-quality problem worth flagging, while "`n/a`,
+  decided" is a settled, permanent state that should never prompt a re-ask. Encoding that
+  distinction as a sentinel value inside the existing field, rather than a separate boolean or a
+  comment, keeps every consumer's check to one line (`headless/policydoc.py`'s own `is_excluded`)
+  instead of a second field to keep in sync with the first. `dwelling_type` and the `"work"`
+  address type are seeded now, ahead of the property-insurance and commute-aware-auto specs that
+  will actually consume them, for the same reason D11's own `spouse`/`property` seeding was: the
+  Director is populating his full household shape in one sitting, and this delivery's only
+  obligation in response is the explicit "not wired yet" guard (FR-036) it already provides
+  structurally, not incrementally seeding data per future feature.
+- **Alternatives considered**: leaving an excluded asset's `currently_insured`/`policy_doc` fields
+  simply absent, with no sentinel at all (rejected: this is indistinguishable from "no data yet,
+  forgot to fill this in" - the Director's own point in choosing an explicit sentinel is that
+  absence and decided-exclusion are different states worth telling apart, and a future feature
+  reading the same document has no way to recover that distinction once it is collapsed to "field
+  simply is not there"); a separate boolean field (e.g. `excluded: true`) instead of overloading
+  `currently_insured`/`policy_doc` themselves (rejected: a second field can drift out of sync with
+  the first - nothing stops `policy_doc` from holding a real path while `excluded` still says
+  `true`, whereas the sentinel-in-place design makes the excluded state and the field's own
+  would-be value the same field, structurally unable to disagree with itself); a hard schema-level
+  `type` enum excluding `"work"` until its own future spec exists (rejected: the Director is
+  seeding his real document now, ahead of the spec that will consume it, the same reasoning D11
+  already used for `spouse`/`property` - forcing him to wait would just mean a second edit round
+  later for no benefit this delivery's own FR-036 guard does not already provide).
+
+## D17. `scripts/vault.py set`'s 1024-character interactive refusal and piped-stdin path: already shipped, out of this delivery's own build scope (amendment 9, 2026-08-25)
+
+- **Decision**: `scripts/vault.py set NAME`'s hidden interactive prompt refuses any value of 1024
+  or more characters (`REFUSED: value is 1024+ characters and may have been truncated by the
+  terminal's input limit; pipe it instead: pbpaste | python scripts/vault.py set <name>`) rather
+  than silently storing a value the terminal's own canonical input-line limit may have already
+  truncated. The same command also accepts the value on piped stdin instead (`pbpaste | python
+  scripts/vault.py set profile`; Windows: `Get-Clipboard | python scripts\vault.py set profile`),
+  which has no such limit and still keeps the value out of argv, files, and the scrollback; the
+  interactive prompt itself now prints the pipe-command hint before asking for a value, so the
+  Director sees the escape hatch before pasting, not only after a refusal. Both behaviors were
+  shipped directly on `main`, ahead of and independent of this delivery, as hotfixes v0.0.4.3
+  (merge `a7e2e48`, commit `4a17be6`: the stdin-pipe acceptance and the 1024-character refusal) and
+  v0.0.4.4 (merge `d55bc80`, commit `2d7799a`: the pipe hint printed before the prompt) - this
+  delivery's own spec set (FR-039c) records both as shipped fact, the same pattern D12 already
+  established for `get` and D14 for `profile.template.json`. This worktree's own `v0.0.5` branch,
+  forked before either hotfix landed, does not yet contain them.
+- **Rationale**: `profile.template.json`'s own shape (D14) is 1235+ characters as raw JSON - well
+  past the 1024-character canonical-input-line limit macOS terminals impose on a single line fed
+  into a hidden `getpass` prompt (verified empirically on the Director's own machine, per `scripts/
+  vault.py`'s own module docstring: "a 2000-char line into getpass on a pty hangs"). Before this
+  hotfix existed, the profile-editing round trip this feature's own quickstart depends on
+  (`vault.py get profile` -> edit -> `vault.py set profile`) would have silently truncated or
+  hung on exactly the document size this delivery's own array-and-`feature_configs` shape produces
+  - a real, load-bearing gap this document has to record accurately once it was discovered, not
+  merely note as a future concern. Recording the exact merge and commit identifiers, and the exact
+  refusal message text, matches the evidentiary standard this document already applies to `get`'s
+  own recording (D12) and to the landing-page selectors' own recon.
+- **Alternatives considered**: describing the profile-editing round trip only via the hidden
+  interactive prompt, without mentioning the piped-stdin path or the 1024-character refusal
+  (rejected: this is precisely the failure mode an Opus verifier's own cross-reference pass caught
+  in this delivery's own quickstart - an instruction that always fails once a real `profile`
+  document reaches this delivery's own array-and-`feature_configs` size is worse than no
+  instruction at all, since it looks correct until someone actually runs it); this delivery
+  attempting to shorten `profile.template.json`'s own shape so it fits under 1024 characters and
+  the interactive prompt keeps working (rejected outright: the template's shape is D14's own
+  enforced contract, shipped independently of this delivery and not something a downstream spec is
+  authorized to redesign to work around an unrelated terminal limit - the correct fix is the one
+  `main` already shipped, a pipe, not a smaller document).
+
+## D18. Comparison arithmetic: deterministic `Decimal` parsing and normalization for amounts, limits, and deductibles (ORCHESTRATOR DECISION, 2026-08-25)
+
+- **Decision**: FR-016/FR-018/FR-046 previously left "normalized premium" and "better/worse"
+  undefined at the arithmetic level. FR-067 now defines it exactly: (a) an amount parses by
+  stripping currency symbols, commas, and spaces, then parsing as a decimal number; `term_months`
+  parses as a positive integer; either failing for a quote ranks that quote last, tagged "premium
+  not comparable," never a crash or a guess; (b) the normalized premium is `Decimal(amount) /
+  term_months`, quantized to 2 decimal places with `ROUND_HALF_UP`, presented as a monthly figure,
+  with the report stating the normalization was applied; (c) a limit string parses to a tuple of
+  integers by splitting on `"/"`, stripping `$`/commas, and multiplying a trailing `k`/`K` part by
+  1000; two limits compare only when their tuples share arity (element-wise `>=` is better-or-equal,
+  all-equal is equal, any-lower is worse); a different arity or an unparseable side is its own
+  "not comparable" class, never silently dropped; (d) a deductible parses the same way as an
+  amount to a single number, lower is better, and an empty deductible on either side is "not
+  comparable"; (e) every parse and comparison uses Python's `Decimal` type only, never `float`,
+  which is what makes data-model.md's `build_comparison` byte-identical-output invariant achievable
+  in practice, not only in principle.
+- **Rationale**: a comparison engine the Director is meant to audit ("recommend me the best quote
+  ... showing the comparison in nice pretty HTML") cannot leave "normalized premium" or
+  "better/worse" as prose the implementer is free to interpret differently each time - two
+  different interpretations of "normalize to the same term" or "compare a split limit" would
+  produce two different, silently disagreeing recommendations from the same input data, which is
+  exactly the kind of nondeterminism D5's own "no LLM anywhere in this path" decision already
+  exists to prevent one layer up. `Decimal` rather than `float` is not a style preference here: a
+  ranking rule that has to be byte-identical across runs (data-model.md's own invariant) cannot
+  tolerate a binary floating-point rounding difference silently reordering two closely priced
+  quotes between two runs of the same input. Ranking an unparseable premium last, with a stated
+  reason, rather than raising or silently excluding the quote, keeps FR-025's "a report must still
+  be produced" guarantee true even when one insurer's own captured text turns out to be malformed
+  - the same soft-degrade discipline D15 already applies to a PDF that fails to parse, applied
+  here to a captured page's own premium text instead.
+- **Alternatives considered**: leaving the arithmetic underspecified in the spec and letting
+  `/speckit-implement` choose a reasonable parsing scheme (rejected: this is precisely the gap an
+  Opus verifier's own cross-reference pass flagged as unable to guarantee determinism or
+  auditability without a written rule - two independently reasonable parsing schemes could
+  disagree on a split-limit comparison or a currency-stripping regex, and neither the Director nor
+  a later reviewer could tell from the spec alone which one shipped); using `float` for the
+  normalized-premium division (rejected: `float` division of even simple decimal amounts can
+  produce a value that differs in its last digit between platforms or Python versions, which is
+  exactly the nondeterminism data-model.md's own byte-identical-output invariant forbids); treating
+  an unparseable premium as a hard refusal of the whole comparison run (rejected: this would let
+  one insurer's own malformed captured text take down a report FR-025 already promises to produce
+  regardless of individual insurer trouble - the same "degrade, do not refuse" reasoning D15 and
+  FR-058 already apply to a PDF that fails to parse); silently excluding a quote with an
+  unparseable premium from `ranked_quotes` instead of ranking it last with a stated reason
+  (rejected: this would make a real captured quote simply vanish from the report with no
+  explanation, which is worse for the Director's own audit than an honestly labeled last-place
+  row).
