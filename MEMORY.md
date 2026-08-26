@@ -32,8 +32,18 @@ and what is open.
 
 ## Known site traps
 
-*(none yet; add one row per site as errands land: selector quirks, anti-bot behaviour,
-session expiry, 2FA flow)*
+- **Progressive (`www.progressive.com/auto/`), 2026-08-26** - refuses the automated quote-start
+  submission under headless Chrome. Three bounded, synthetic-data-only recon walks (spec
+  005-insurance-quote-comparison, research.md D8) all confirmed the two landing selectors
+  (`#zipCode_mma`, `#qsButton_mma`) resolve, then found the same result across three different
+  submission attempts (a direct click, an Enter keypress, a JS-dispatched click): three
+  `Failed to load resource: 403 Forbidden` console errors and zero navigation away from the
+  landing page within a 20-second wait, every time. Recorded as evidence for the repository's
+  standing headless-user-agent question (`PATTERNS.md`'s "Quiet by default" entry) - untested
+  whether a real `--apply` run (a real, non-headless windowed Chrome, per "quiet by default")
+  hits the same block, since recon is headless-only by its own authorization (D8). The shipped
+  Progressive walk (`headless/insurers/progressive.py`) therefore ships only the two landing
+  steps; nothing past them is automated in this delivery.
 
 ## Errands run (dated)
 
@@ -57,6 +67,20 @@ Record each working session's id here so it can be resumed with `claude --resume
 
 ## Open items
 
+- **Spec 005 (insurance quote comparison, v0.0.5, 2026-08-25/26): implementation delivered,
+  Director UAT pending.** Walk framework (`headless/steps.py`, `Session.click`/`capture`,
+  `Errand.walk()`), type-discriminated array addressing in `ProfileRegistry` plus
+  `RegistryAmbiguous`, the `profile.template.json` drift test, the capture model
+  (`headless/capture.py`), per-asset `policy_doc` PDF extraction and Director confirmation
+  (`headless/policydoc.py`, `scripts/policy_extract.py`), the `Decimal`-only comparison engine
+  (`headless/compare.py`), the self-contained HTML report generator (`headless/report.py`), the
+  Progressive walk (landing-page-only, see the site-trap entry above), and the multi-insurer
+  orchestrator (`scripts/quote_compare.py`) are all implemented and unit-tested. Pending: the
+  Director's own `--apply` run against the real Progressive site (does the headless-only block
+  found in recon also occur in a real, non-headless apply window - unverified either way);
+  `scripts/policy_extract.py` against a real policy PDF (the heuristics are unproven against real
+  declarations-page layouts, research.md D15's own accepted residual); the profile-seeding round
+  trip (quickstart Scenarios 1-2); the full quickstart Scenarios 3-10.
 - Run this repository's own `vault.py init` / `vault.py set profile` on this machine (spec
   004-age-vault; not yet done in this delivery, since the brief for that delivery excluded
   touching `~/.headless/`) and record the outcome in the "Errands run" table below.

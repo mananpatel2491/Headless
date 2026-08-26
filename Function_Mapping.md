@@ -7,10 +7,16 @@ errand is added, changed, or retired.
 | Errand script | Site(s) | Reads | Writes (up to) | Secrets / profile fields | Handoff point (human-only after this) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `scripts/probe.py` | any URL | page title, screenshot | none | none | `n/a (read-only errand)`: `--apply` still performs the handoff with an empty plan, so the Director can seed a login |
+| `headless/insurers/progressive.py`'s `ProgressiveQuoteErrand` (composed by `scripts/quote_compare.py`, not run directly) | `https://www.progressive.com/auto/` | the landing page's ZIP field and quote-start button, confirmed twice (before this feature was scoped, and again by implementation-time recon, research.md D8) | the ZIP field and the quote-start click only - implementation-time recon (three headless, scratch-profile, synthetic-data-only walks) found Progressive's own funnel refuses the automated quote-start submission under headless Chrome (three "403 Forbidden" resource-load errors, no navigation past the landing page in any of the three attempts); no selector past the landing page ships this delivery (FR-032) | `registry:addresses.home.zip` | `HANDOFF` (`ProgressiveQuoteErrand.HANDOFF`, `headless/insurers/progressive.py`): explains that recon could not verify anything past the quote-start click, so nothing further is automated - continuing the quote by hand in the window is optional, not required |
 
 `scripts/check_env.py` is a maintenance script, not an errand (see `scripts/README.md`): it opens no
 browser window, has no site, and the errand contract (modes, `HANDOFF`) does not apply, so it has no
-row here.
+row here. `scripts/quote_compare.py` (spec 005-insurance-quote-comparison) is an **orchestrator**,
+not an errand: it composes `ProgressiveQuoteErrand`'s own `.run()` call (and any future insurer's,
+via `headless.insurers.WALK_REGISTRY`) rather than owning a site, a `plan()`/`walk()`, or a
+`HANDOFF` of its own - see `scripts/README.md`'s own "Orchestrators" section for its row.
+`scripts/policy_extract.py` is a maintenance-adjacent script, not an errand either (no browser, no
+site) - see `scripts/README.md`'s Maintenance table.
 
 ## Maintenance Rules
 

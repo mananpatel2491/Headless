@@ -22,6 +22,7 @@ from headless.fields import parse_source, FieldPlan
 from headless.gates import GateRefused, Mode
 from headless.session import (
     SESSION_COOKIE_FILENAME,
+    ClickFailed,
     FillFailed,
     Session,
     _SCREENSHOT_MASK_CSS,
@@ -641,17 +642,29 @@ def test_export_then_import_session_cookie_across_two_contexts_shares_state(tmp_
 
 
 class _FakePageForLaunch:
-    pass
+    def __init__(self) -> None:
+        self.bring_to_front_calls = 0
+
+    def bring_to_front(self) -> None:
+        self.bring_to_front_calls += 1
+
+    def is_closed(self) -> bool:
+        return False
 
 
 class _FakeLaunchedContext(_FakeCookieContext):
     """_FakeCookieContext plus the extra surface Session.__enter__/__exit__
-    needs on the launched-profile path (pages/new_page/close)."""
+    needs on the launched-profile path (pages/new_page/close), plus a fake
+    CDP session (new_cdp_session) so a full real-Session apply lifecycle can
+    exercise _hide_window/_restore_window without a real browser (FIX-FIRST
+    3, Opus verifier, 2026-08-26)."""
 
     def __init__(self, cookies_to_return=None, add_cookies_exception=None):
         super().__init__(cookies_to_return=cookies_to_return, add_cookies_exception=add_cookies_exception)
         self.pages: list = []
         self.closed = False
+        self.cdp_session = _StubCdpSession()
+        self.new_cdp_session_calls = 0
 
     def new_page(self):
         page = _FakePageForLaunch()
@@ -660,6 +673,10 @@ class _FakeLaunchedContext(_FakeCookieContext):
 
     def close(self):
         self.closed = True
+
+    def new_cdp_session(self, page):
+        self.new_cdp_session_calls += 1
+        return self.cdp_session
 
 
 class _FakeChromiumForLaunch:
@@ -718,6 +735,76 @@ def test_launched_profile_session_passes_chromium_sandbox_true(tmp_path, monkeyp
         assert kwargs["chromium_sandbox"] is True
     finally:
         session.__exit__(None, None, None)
+
+
+# --- FIX-FIRST 3 (Opus verifier, 2026-08-26): the real T012 visibility -----
+# --- proof - _hide_window fires exactly once (from __enter__), never again -
+# --- after the first HumanStep, through a full real-Session apply lifecycle.
+
+
+def test_hide_window_fires_once_and_never_again_after_first_humanstep(tmp_path, monkeypatch):
+    context = _FakeLaunchedContext()
+    chromium = _FakeChromiumForLaunch(context)
+    monkeypatch.setattr(
+        session_module, "sync_playwright", lambda: _FakeSyncPlaywrightHandle(_FakePlaywrightObj(chromium))
+    )
+
+    config = _config(profile_dir=tmp_path / "chrome-profile", headed=True, show=False)
+    session = Session(config, Mode.APPLY, confirm=lambda: None)
+
+    # Spy-count the real _hide_window/_restore_window (instance-level
+    # monkeypatch: wraps and still calls the real implementation, so this
+    # proves the actual CDP mechanics ran, not just that the spy fired).
+    hide_calls: list[int] = []
+    restore_calls: list[int] = []
+    real_hide = session._hide_window
+    real_restore = session._restore_window
+
+    def counting_hide():
+        hide_calls.append(1)
+        return real_hide()
+
+    def counting_restore():
+        restore_calls.append(1)
+        return real_restore()
+
+    session._hide_window = counting_hide
+    session._restore_window = counting_restore
+
+    with session:
+        # Simulates the walk framework's apply-mode dispatch
+        # (headless/errand.py) executing two HumanSteps back to back, then
+        # the trailing self.HANDOFF - each is a direct session.handoff()
+        # call, exactly as errand.py's own dispatch loop makes them.
+        session.handoff("First instruction")
+        session.handoff("Second instruction")
+        session.handoff("Trailing HANDOFF")
+
+    assert len(hide_calls) == 1  # only __enter__'s own call, never again
+    assert len(restore_calls) == 3  # once per handoff() call, including the trailing one
+
+    # The underlying CDP calls confirm the real mechanics ran, not just the
+    # spy wrapper: exactly one hide sequence (one getWindowForTarget), and
+    # every setWindowBounds after the first two (the hide sequence's own)
+    # is a restore call - never a second minimize.
+    methods = [call[0] for call in context.cdp_session.calls]
+    assert methods.count("Browser.getWindowForTarget") == 1
+    minimize_bounds_calls = [
+        call for call in context.cdp_session.calls
+        if call[0] == "Browser.setWindowBounds" and call[1].get("bounds", {}).get("windowState") == "minimized"
+    ]
+    assert len(minimize_bounds_calls) == 1  # never minimized a second time
+
+
+def test_hide_window_has_exactly_one_call_site_in_session_py():
+    # Belt and braces alongside the behavioral proof above: a structural
+    # guarantee that no code path in this module could ever call
+    # _hide_window() a second time, because there is only one call site at
+    # all (inside __enter__, gated by _should_hide_window).
+    source = session_module.__file__
+    with open(source, encoding="utf-8") as f:
+        text = f.read()
+    assert text.count("self._hide_window()") == 1
 
 
 # --- T019: CDP-attach path never touches the state file (FR-012, SC-006) ---
@@ -899,3 +986,171 @@ def test_export_failure_after_tmp_write_removes_the_tmp_file(tmp_path, monkeypat
     tmp_file = tmp_path / f"{SESSION_COOKIE_FILENAME}.tmp"
     assert not tmp_file.exists()
     assert list(tmp_path.iterdir()) == []  # nothing left behind at all
+
+
+# --- v0.0.5: Session.click / Session.capture (spec 005, T003/T004) ---------
+
+
+class _StubLocator:
+    def __init__(
+        self,
+        *,
+        count: int = 1,
+        click_exc: Exception | None = None,
+        text: str | None = None,
+        first_text: str | None = None,
+    ):
+        self._count = count
+        self._click_exc = click_exc
+        self._text = text
+        # NIT 10: a real multi-match Locator.text_content() raises a
+        # Playwright strict-mode violation; .first narrows to one element.
+        # first_text stands in for what .first.text_content() would return.
+        self._first_text = first_text if first_text is not None else text
+        self.click_calls = 0
+
+    def count(self) -> int:
+        return self._count
+
+    def click(self) -> None:
+        self.click_calls += 1
+        if self._click_exc is not None:
+            raise self._click_exc
+
+    def text_content(self):
+        if self._count > 1:
+            raise AssertionError(
+                "a multi-match locator's own bare text_content() must never be called - "
+                "Session.capture must read via .first instead (NIT 10)"
+            )
+        return self._text
+
+    @property
+    def first(self) -> "_StubLocator":
+        return _StubLocator(count=1, text=self._first_text)
+
+
+class _StubPageForClickCapture:
+    def __init__(self, locators: dict[str, _StubLocator]):
+        self._locators = locators
+
+    def locator(self, selector: str) -> _StubLocator:
+        return self._locators[selector]
+
+
+def _bare_session_for_click_capture(mode: Mode) -> Session:
+    session = _bare_session()
+    session.mode = mode
+    return session
+
+
+def test_click_refused_outside_apply_mode():
+    session = _bare_session_for_click_capture(Mode.PREVIEW)
+    with pytest.raises(GateRefused, match="apply mode"):
+        session.click("#qsButton_mma")
+
+
+def test_click_refused_in_check_mode():
+    session = _bare_session_for_click_capture(Mode.CHECK)
+    with pytest.raises(GateRefused, match="apply mode"):
+        session.click("#qsButton_mma")
+
+
+def test_click_calls_locator_click_exactly_once_no_retry():
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    locator = _StubLocator()
+    session.page = _StubPageForClickCapture({"#qsButton_mma": locator})
+
+    session.click("#qsButton_mma")
+
+    assert locator.click_calls == 1
+
+
+def test_click_wraps_locator_exception_into_click_failed_without_leaking_message():
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    raw_message = "Locator.click: Timeout exceeded.\nCall log:\n  - waiting for locator(\"#qsButton_mma\")"
+    locator = _StubLocator(click_exc=RuntimeError(raw_message))
+    session.page = _StubPageForClickCapture({"#qsButton_mma": locator})
+
+    with pytest.raises(ClickFailed) as exc_info:
+        session.click("#qsButton_mma", "Start quote")
+
+    exc = exc_info.value
+    assert exc.step_name == "Start quote"
+    assert exc.selector == "#qsButton_mma"
+    assert exc.cause_class == "RuntimeError"
+    assert locator.click_calls == 1
+    # The underlying exception's own message must never leak into ClickFailed.
+    assert "Timeout exceeded" not in str(exc)
+    assert "Call log" not in str(exc)
+
+
+def test_click_failed_defaults_step_name_to_selector_when_not_given():
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    locator = _StubLocator(click_exc=RuntimeError("boom"))
+    session.page = _StubPageForClickCapture({"#x": locator})
+
+    with pytest.raises(ClickFailed) as exc_info:
+        session.click("#x")
+
+    assert exc_info.value.step_name == "#x"
+
+
+def test_capture_returns_stripped_text_for_a_resolving_selector():
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    locator = _StubLocator(count=1, text="  $123.45  ")
+    session.page = _StubPageForClickCapture({"#premium": locator})
+
+    result = session.capture({"premium.amount": "#premium"})
+
+    assert result == {"premium.amount": "$123.45"}
+
+
+def test_capture_multi_match_selector_degrades_to_the_first_element(capsys):
+    # NIT 10 (Opus verifier, 2026-08-26): a selector matching more than one
+    # element must not abort the whole CaptureStep with a Playwright
+    # strict-mode violation - Session.capture reads via .first instead, so
+    # one ambiguous extractor degrades to "read the first match" rather
+    # than crashing every other extractor in the same call.
+    ambiguous = _StubLocator(count=2, first_text="  first match  ")
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    session.page = _StubPageForClickCapture({"#ambiguous": ambiguous})
+
+    result = session.capture({"coverage.collision.limit": "#ambiguous"})
+
+    assert result == {"coverage.collision.limit": "first match"}
+    assert capsys.readouterr().out == ""  # a resolving (if ambiguous) selector prints no note
+
+
+def test_capture_missing_selector_yields_empty_string_and_one_note(capsys):
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    locator = _StubLocator(count=0)
+    session.page = _StubPageForClickCapture({"#missing": locator})
+
+    result = session.capture({"coverage.collision.limit": "#missing"})
+
+    assert result == {"coverage.collision.limit": ""}
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out == ["note: capture field 'coverage.collision.limit' not found (selector missing)"]
+
+
+def test_capture_continues_past_a_missing_extractor_to_the_rest(capsys):
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    found = _StubLocator(count=1, text="12,000")
+    missing = _StubLocator(count=0)
+    session.page = _StubPageForClickCapture({"#found": found, "#missing": missing})
+
+    result = session.capture({"a": "#missing", "b": "#found", "c": "#missing"})
+
+    assert result == {"a": "", "b": "12,000", "c": ""}
+    assert set(result.keys()) == {"a", "b", "c"}
+
+
+def test_capture_never_calls_click():
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    locator = _StubLocator(count=1, text="x")
+    session.page = _StubPageForClickCapture({"#a": locator})
+
+    session.capture({"a": "#a"})
+
+    assert locator.click_calls == 0

@@ -8,26 +8,40 @@ so a missing secret or registry path fails before any window opens -> Session
 -> goto -> mode branch -> PreviewRecord + write_artifacts -> stdout line ->
 exit code.
 
+Walk framework (v0.0.5, spec 005-insurance-quote-comparison): `walk(registry)`
+generalizes `plan(registry)` to an ordered list of `Step`s - `FieldPlan`
+(unchanged), `ClickStep`, `HumanStep`, `CaptureStep` (`headless/steps.py`).
+The default `walk()` returns `plan(registry)` unchanged, so an errand that
+never overrides it (every prior errand, `probe.py` included) behaves
+identically to before this feature existed. PREVIEW records every step by
+kind/name and executes nothing beyond the errand's own initial `goto()` -
+never a click, handoff, or capture, in any mode but APPLY (SC-001). APPLY
+dispatches every step in declared order; a `CaptureStep` assembles and
+writes a `QuoteCapture` via `headless/capture.py` after `Session.capture()`
+returns. See data-model.md's state-machine delta for the full table.
+
 Exception handling is split into two blocks with different exit-code and
 print-format rules:
 
 - Pre-session block (before any browser is touched): `ConfigError`,
-  `GateRefused`, `SecretMissing`, `RegistryMissing` print `REFUSED: <exc>`
-  and exit 1 (their messages never carry a raw secret/registry value, only
-  names/paths, so printing them is safe). `ProfileError` (malformed `profile`
-  JSON; a `ValueError` subclass with a position-only message - see
-  profile.py), `SourceError`, and `FileNotFoundError` print
-  `ERROR: <ClassName>: <exc>` and exit 1. A bare `ValueError` that is not one
-  of these (N10: deliberately narrowed, not "any ValueError") falls through
-  to the generic branch below instead. Anything else prints only the class
-  name plus a HEADLESS_DEBUG hint and exits 1.
+  `GateRefused`, `SecretMissing`, `RegistryMissing`, `RegistryAmbiguous`
+  print `REFUSED: <exc>` and exit 1 (their messages never carry a raw
+  secret/registry value, only names/paths, so printing them is safe).
+  `ProfileError` (malformed `profile` JSON; a `ValueError` subclass with a
+  position-only message - see profile.py), `SourceError`, and
+  `FileNotFoundError` print `ERROR: <ClassName>: <exc>` and exit 1. A bare
+  `ValueError` that is not one of these (N10: deliberately narrowed, not
+  "any ValueError") falls through to the generic branch below instead.
+  Anything else prints only the class name plus a HEADLESS_DEBUG hint and
+  exits 1.
 - Post-session block (a real browser process is already running):
-  `FillFailed`, `ConfigError`, `GateRefused`, `SecretMissing`,
-  `RegistryMissing` print `ERROR: <ClassName>: <exc>` and exit 2 (their
-  messages are safe to print; `FillFailed` in particular is engineered to
-  hold only redacted values, never a raw one - see session.py). Any other
-  exception - including a raw Playwright error whose call log could embed a
-  just-typed secret - prints only its class name
+  `FillFailed`, `ClickFailed`, `ConfigError`, `GateRefused`, `SecretMissing`,
+  `RegistryMissing`, `RegistryAmbiguous` print `ERROR: <ClassName>: <exc>`
+  and exit 2 (their messages are safe to print; `FillFailed`/`ClickFailed`
+  in particular are engineered to hold only redacted or structural values,
+  never a raw one - see session.py). Any other exception - including a raw
+  Playwright error whose call log could embed a just-typed secret - prints
+  only its class name
   (`ERROR: <ClassName> (rerun with HEADLESS_DEBUG=1 for the traceback)`) and
   exits 2; the traceback goes to stderr only when HEADLESS_DEBUG=1 is set.
 """
@@ -39,13 +53,17 @@ import os
 import sys
 import traceback
 
+from datetime import datetime, timezone
+
+from headless import capture
 from headless.config import ConfigError, load_config
 from headless.fields import FieldPlan, SourceError, resolve_source
 from headless.gates import GateRefused, Mode, add_mode_arguments, resolve_mode
 from headless.preview import PreviewRecord, write_artifacts
-from headless.profile import ProfileError, ProfileRegistry, RegistryMissing
+from headless.profile import ProfileError, ProfileRegistry, RegistryAmbiguous, RegistryMissing
 from headless.secrets import SecretMissing, VaultBackend, open_vault
-from headless.session import FillFailed, Session
+from headless.session import ClickFailed, FillFailed, Session
+from headless.steps import CaptureStep, ClickStep, HumanStep
 
 
 class _LazyProfileRegistry:
@@ -80,6 +98,13 @@ class Errand:
     name: str = ""
     HANDOFF: str = ""
     dependencies: list[str] = []
+    # Walk framework (spec 005): the funnel's own pre-selected coverage
+    # package/tier name, when a walk's terminal CaptureStep captures a
+    # quote (QuoteCapture.package, spec FR-014) - None when the insurer has
+    # no tiering at all, or when this errand never captures a quote. Set by
+    # an insurer Errand subclass as a plain class attribute; run() reads it
+    # via getattr so a non-insurance errand (probe.py) needs no change.
+    package: str | None = None
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         """Hook for errand-specific arguments (e.g. a positional URL). No-op by default."""
@@ -87,6 +112,14 @@ class Errand:
     def plan(self, registry) -> list[FieldPlan]:
         """The fields apply would fill, in order. Empty for read-only errands."""
         return []
+
+    def walk(self, registry) -> list:
+        """The ordered list of Steps this errand's run executes (spec 005,
+        FR-001). Default: wraps `plan()` unchanged, so every errand that
+        does not override `walk()` behaves identically to before this
+        feature existed - `probe.py` and every prior spec's own errand are
+        unaffected by this feature existing."""
+        return self.plan(registry)
 
     def url(self, args: argparse.Namespace) -> str:
         """The address this run opens. Override, or add a `url` argument via add_arguments."""
@@ -125,15 +158,19 @@ class Errand:
             mode = resolve_mode(args, isatty=sys.stdin.isatty(), headed=config.headed)
             vault = open_vault(config)
             registry = _LazyProfileRegistry(vault)
-            plan = self.plan(registry)
+            walk_steps = self.walk(registry)
 
             # Fail before any window opens (FR-004, SC-006, data-model.md
             # state transitions): every planned source must resolve now, in
             # every mode - not just apply - so a broken plan never gets as
-            # far as a browser window.
-            for field_plan in plan:
-                resolve_source(field_plan.source, vault, registry)
-        except (ConfigError, GateRefused, SecretMissing, RegistryMissing) as exc:
+            # far as a browser window. Walk framework (spec 005): this loop
+            # now iterates walk() rather than plan() - ClickStep/HumanStep/
+            # CaptureStep carry no .source attribute and are skipped, never
+            # part of this loop (FR-009).
+            for step in walk_steps:
+                if isinstance(step, FieldPlan):
+                    resolve_source(step.source, vault, registry)
+        except (ConfigError, GateRefused, SecretMissing, RegistryMissing, RegistryAmbiguous) as exc:
             print(f"REFUSED: {exc}")
             return 1
         except (ProfileError, SourceError, FileNotFoundError) as exc:
@@ -152,6 +189,7 @@ class Errand:
 
                 fields_for_record: list[dict] = []
                 checks_for_record: list[dict] = []
+                steps_for_record: list[dict] = []
 
                 if mode is Mode.CHECK:
                     checks_for_record = [
@@ -159,18 +197,48 @@ class Errand:
                         for selector, found in session.probe(self.dependencies)
                     ]
                 else:
-                    for field_plan in plan:
-                        value = resolve_source(field_plan.source, vault, registry)
-                        fields_for_record.append(
-                            {
-                                "name": field_plan.name,
-                                "selector": field_plan.selector,
-                                "source_kind": field_plan.source.kind,
-                                "value": value,
-                            }
-                        )
-                        if mode is Mode.APPLY:
-                            session.fill(field_plan, vault, registry)
+                    # Walk framework (spec 005, data-model.md's state-machine
+                    # delta): PREVIEW records every step by kind/name and
+                    # never executes a ClickStep/HumanStep/CaptureStep - the
+                    # walk never navigates past the errand's own initial
+                    # goto() above, in any mode, for any insurer (SC-001).
+                    # APPLY dispatches every step in declared order.
+                    for step in walk_steps:
+                        if isinstance(step, FieldPlan):
+                            value = resolve_source(step.source, vault, registry)
+                            fields_for_record.append(
+                                {
+                                    "name": step.name,
+                                    "selector": step.selector,
+                                    "source_kind": step.source.kind,
+                                    "value": value,
+                                }
+                            )
+                            if mode is Mode.APPLY:
+                                session.fill(step, vault, registry)
+                        elif isinstance(step, ClickStep):
+                            steps_for_record.append({"kind": "click", "name": step.name})
+                            if mode is Mode.APPLY:
+                                session.click(step.selector, step.name)
+                        elif isinstance(step, HumanStep):
+                            steps_for_record.append({"kind": "human", "name": step.name})
+                            if mode is Mode.APPLY:
+                                session.handoff(step.instruction)
+                        elif isinstance(step, CaptureStep):
+                            steps_for_record.append({"kind": "capture", "name": step.name})
+                            if mode is Mode.APPLY:
+                                raw_fields = session.capture(step.extractors)
+                                fetched_at = datetime.now(timezone.utc).isoformat()
+                                quote_capture = capture.assemble_capture(
+                                    insurer=self.name,
+                                    source_url=session.page.url,
+                                    fetched_at=fetched_at,
+                                    raw_fields=raw_fields,
+                                    package=getattr(self, "package", None),
+                                )
+                                capture.write_capture(quote_capture, capture.reports_dir_for(config))
+                        else:
+                            raise TypeError(f"unknown Step kind: {type(step).__name__}")
 
                 record = PreviewRecord(
                     errand=self.name,
@@ -180,6 +248,7 @@ class Errand:
                     handoff=self.HANDOFF,
                     fields=fields_for_record,
                     checks=checks_for_record,
+                    steps=steps_for_record,
                 )
                 screenshot = session.screenshot() if config.screenshots else None
                 _png_path, json_path = write_artifacts(record, screenshot, config.preview_dir)
@@ -193,10 +262,19 @@ class Errand:
                     print(f"CHECK {found} found, {missing} missing")
                 else:
                     print(f"PREVIEW {json_path}")
-        except (FillFailed, ConfigError, GateRefused, SecretMissing, RegistryMissing) as exc:
+        except (
+            FillFailed,
+            ClickFailed,
+            ConfigError,
+            GateRefused,
+            SecretMissing,
+            RegistryMissing,
+            RegistryAmbiguous,
+        ) as exc:
             # Post-launch: a browser process is already running. Every class
             # here is engineered so str(exc) never carries a raw secret or
-            # registry value (FillFailed holds only redact()ed text).
+            # registry value (FillFailed/ClickFailed hold only redacted or
+            # structural text).
             print(f"ERROR: {type(exc).__name__}: {exc}")
             return 2
         except Exception as exc:

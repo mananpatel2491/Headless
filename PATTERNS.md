@@ -360,6 +360,102 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   `RuntimeError(f"keychain write failed for item {name!r} (security exit {exc.returncode})")`
   from the caught `subprocess.CalledProcessError`, `from None` so the original (whose `.cmd`
   holds the raw value) is never chained onto the traceback.
+- **`Session.click` is the only sanctioned way to click; `Session.capture` is the only sanctioned
+  way to read a page for a walk's own capture record (v0.0.5, spec 005-insurance-quote-comparison).**
+  Mirrors `Session.fill`'s own "the only sanctioned way to type" framing exactly, extended to a
+  second interaction kind: `click(selector, step_name=None)` refuses outside apply mode
+  (`GateRefused`, same message pattern as `fill`), never retries, and wraps any locator exception
+  into `ClickFailed` (alongside `FillFailed`, no `redact()` call needed - a click carries no typed
+  value). `capture(extractors)` mirrors `probe`'s existing read-only shape: a missing selector
+  never raises, it yields an empty string plus one value-free note and the call continues with the
+  remaining extractors (SC-009). `tests/test_no_direct_typing.py`'s existing structural AST scan
+  already covers `.click(` as a forbidden direct call on a page/locator inside `scripts/*.py`; no
+  change to that test's own `FORBIDDEN_ATTRS` was needed for this feature, since every insurer
+  walk composes `ClickStep`/`CaptureStep` through `Errand.walk()`'s own dispatch rather than
+  reaching into a page directly.
+- **Walk framework: `Errand.walk(registry)` defaults to `plan(registry)`, four `Step` kinds, the
+  window-stays-visible-after-first-`HumanStep` rule (v0.0.5, spec 005-insurance-quote-comparison).**
+  `Step = FieldPlan | ClickStep | HumanStep | CaptureStep` (`headless/steps.py`); the default
+  `walk()` implementation (`headless/errand.py`) returns `plan(registry)` unchanged, so every
+  errand written before this feature (`probe.py` included) is unaffected by it existing. Mode
+  matrix: PREVIEW resolves and records every `FieldPlan` source (masked, unchanged) and lists
+  every other step by `{"kind", "name"}` only in a new, additive `PreviewRecord.steps` field -
+  zero clicks, zero handoffs, zero captures, regardless of how deep a future insurer's walk goes
+  (SC-001; this is the property that keeps a no-flags run always safe, `CLAUDE.md`'s own "default
+  run = PREVIEW" hard rule). CHECK is unchanged and walk-blind: it probes only
+  `Errand.dependencies`, never a walk's later steps. APPLY dispatches every step in declared
+  order by `isinstance`; a `HumanStep` reuses the existing `Session.handoff(instruction)` call
+  verbatim (no new session method) - `_restore_window()` is already idempotent past its first
+  call in a run, so a second `HumanStep` naturally keeps the window visible with zero new code
+  (research.md D2 in specs/005-insurance-quote-comparison). A `CaptureStep`'s dispatch assembles
+  and writes a `QuoteCapture` (`headless/capture.py`) to a `reports/` directory derived from
+  `config.preview_dir`'s own sibling (`headless/capture.py`'s `reports_dir_for`) - no new
+  environment variable, no new CLI flag (research.md D4). `ClickFailed`/`RegistryAmbiguous` join
+  `errand.py`'s existing pre- and post-session exception tuples, printed the same value-free way
+  every other domain-shaped refusal already is.
+- **`ProfileRegistry.get` gains type-discriminated array addressing; `RegistryAmbiguous` (v0.0.5,
+  spec 005-insurance-quote-comparison, research.md D13).** The Director's real `profile` document
+  holds `identities`/`addresses`/`vehicles` as JSON arrays, each element carrying a `type` field.
+  When traversal reaches a list-valued node, the next path segment selects the unique element
+  whose `type` field equals that segment exactly (`registry:identities.self.first_name`); zero
+  matches still raise the existing `RegistryMissing`, more than one match raises the new
+  `RegistryAmbiguous` - value-free, naming only the path and the fact of duplication, never either
+  matched element's own content (two elements sharing a `type` value could differ in every other
+  field, and echoing either one back would leak whichever was picked first). An element with no
+  `type` field is never a match candidate for any segment - silently skipped, not an error. This
+  is new, general framework capability inside the same dotted-path traversal every `registry:`
+  source already calls, not a parallel resolver: every existing dict-traversal and scalar-leaf
+  behavior is untouched for a document that never nests a `registry:` path through a list.
+- **`profile.template.json` (repository root) is the enforced schema contract, checked two ways
+  (v0.0.5, spec 005-insurance-quote-comparison, research.md D14).** A dedicated drift test loads
+  the file directly (a plain file read, never through the vault, never a passphrase prompt) and
+  resolves every registry path any shipped walk references through `ProfileRegistry`, failing the
+  suite if any path does not resolve - making it structurally impossible to merge a walk change
+  that outruns the template. `scripts/vault.py verify` (already shipped, hotfix v0.0.4.2) is the
+  complementary check one layer up: the Director's real, live `profile` data against the same
+  template. One file, two independent checks, never a second parallel schema document.
+- **Per-asset `policy_doc` extraction, confirmation, and cache; the `"n/a"` exclusion sentinel
+  (v0.0.5, spec 005-insurance-quote-comparison, research.md D15/D16).** `current_policy` is never
+  hand-typed into `profile`; each insured asset's own `policy_doc` PDF path is deterministically
+  extracted (`headless/policydoc.py`, `pypdf`, dollar-amount/split-limit/deductible/premium-term
+  heuristics only, never an LLM call anywhere in the module) and printed to the Director's own
+  terminal - the third documented value-free-output exception (`CLAUDE.md`) - before a confirmed
+  (accepted-or-corrected) result is cached to `reports/policy/<asset-key>.json`
+  (`vehicles.primary` -> `vehicles-primary`, dots to hyphens), mode `0600` where the platform
+  supports it. Nothing reaches the comparison engine without this explicit confirmation step - an
+  unconfirmed candidate is a distinct type (`ExtractionCandidate`, never a `CurrentPolicy`) so
+  nothing can accidentally pass one to `compare.build_comparison`, which only ever accepts
+  `CurrentPolicy | None`. The literal string `"n/a"` in an asset's `currently_insured` or
+  `policy_doc` field is a defined, Director-decided exclusion sentinel (`headless/policydoc.py`'s
+  `is_excluded`, one function, two callers) - distinct from the field being merely absent, which
+  means only "no data yet."
+- **The comparison engine's arithmetic is `Decimal`-only, never `float`; a `"worse"` sub-metric
+  always dominates a coverage line's own classification (v0.0.5, spec 005-insurance-quote-comparison,
+  research.md D18).** `headless/compare.py`: an amount parses by stripping currency
+  symbols/commas/spaces then parsing as `Decimal`; a limit parses to a tuple of integers by
+  splitting on `"/"` and multiplying a trailing `k`/`K` part by 1000; a deductible parses the same
+  way as an amount. A quote whose premium fails to parse ranks last, tagged "premium not
+  comparable," never a crash or a guessed figure. One coverage line's own limit-vs-deductible
+  comparison combines into a single verdict by an explicit, documented priority order this
+  module's own docstring states plainly (`worse` wins over `not_comparable` wins over `better`
+  wins over `equal`) - spec.md's own FR-067 defines the two sub-comparisons independently but
+  never states how they combine, so this priority order is this repository's own implementer
+  decision, not a value spec.md itself pins down. No LLM call, no fuzzy matching, no learned
+  weighting anywhere in this module (research.md D5) - the coverage-line alias table
+  (`normalize_line`) is a small, hand-authored mapping, extended by hand only.
+- **`reports/` is a new sibling directory to `previews/`, vault-grade like it, but not disposable
+  the same way (v0.0.5, spec 005-insurance-quote-comparison, research.md D4).** `reports/captures/
+  <insurer>-<timestamp>.json` accumulates (never overwritten, one immutable file per successful
+  capture, closer to how `previews/`'s own timestamped files already accumulate);
+  `reports/policy/<asset-key>.json` is whole-file-replaced on every confirmation (exactly one
+  current reference per asset, like the vault file or `session-cookies.json`);
+  `reports/quote-comparison-<date>.html` overwrites any earlier report from the same UTC date (a
+  point-in-time snapshot, not a history). Resolved the same way `previews/` already is - relative
+  to the repository root via `config.preview_dir`'s own sibling, no new environment variable, no
+  new CLI flag. Unlike `previews/` (`PATTERNS.md`'s own "delete freely" entry above), the rendered
+  report and the capture/policy history it draws on are the feature's actual deliverable and its
+  supporting evidence - not routinely disposable, even though both remain gitignored, vault-grade
+  local data never committed, shared, or attached anywhere.
 - **`GcpBackend` detects `NotFound` by exception class name, not `isinstance`**: it never
   imports `google.api_core.exceptions` (that would defeat the lazy-import guarantee for a
   package that is deliberately not installed here). `get_secret`/`put_secret` check
