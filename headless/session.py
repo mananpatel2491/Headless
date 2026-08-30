@@ -456,6 +456,18 @@ class Session:
             locator.click()
         except Exception as exc:
             raise ClickFailed(name, selector, exc) from None
+        # v0.0.7.1: a ClickStep that triggers a navigation leaves the page's
+        # execution context mid-destruction; the walk's next action (another
+        # step, the PreviewRecord's url read, or the screenshot) then races
+        # it - observed live on the first headed funnel entry (a raw
+        # Playwright Error with no artifacts written). Settling here is
+        # best-effort and never fatal: a click that navigates nowhere has
+        # nothing to wait for, and a slow page must not turn a successful
+        # click into a failure.
+        try:
+            self.page.wait_for_load_state()
+        except Exception:
+            pass
 
     def capture(self, extractors: dict[str, str]) -> dict[str, str]:
         """The walk framework's CaptureStep dispatch (data-model.md, spec
@@ -501,8 +513,18 @@ class Session:
             return None
         try:
             return self.page.screenshot()
+        except PlaywrightError:
+            # v0.0.7.1: mid-navigation the context can be destroyed between
+            # the mask injection and the capture (the same race the
+            # post-click settle above narrows but cannot eliminate). Same
+            # fail-soft posture as the CSP branch: JSON-only artifact.
+            print("note: screenshot skipped, the page navigated during capture")
+            return None
         finally:
-            style_handle.evaluate("e => e.remove()")
+            try:
+                style_handle.evaluate("e => e.remove()")
+            except PlaywrightError:
+                pass  # the mask died with the old execution context
 
     def handoff(self, handoff_text: str) -> bool:
         self._restore_window()
