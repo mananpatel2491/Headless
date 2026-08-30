@@ -319,6 +319,24 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   validate or reject a value by shape (there is no passphrase-or-value strength policy of any
   kind, entirely the Director's own choice), so the safeguard is this stated policy plus the
   simple fact that every login this tool needs already has a better home than the vault.
+- **The recorder observes; it never drives (v0.0.7, spec 007-record-scaffold).**
+  `scripts/record.py` scaffolds a draft errand from one hand-driven walk, and its whole design
+  is subtraction: it adds no fourth mode to `headless/gates.py`, calls neither `Session.fill`
+  nor `Session.click`, and injects only a passive observer (`headless/record.py`'s
+  `INIT_SCRIPT` plus one exposed binding) into a window the Director drives with their own
+  hands. Three invariants make the output safe to persist: (1) a typed value exists in Python
+  only inside `WalkRecording.add_event`, long enough to be matched against the flattened
+  profile registry - artifacts store the outcome (`registry:<path>` or a `literal:` TODO
+  placeholder), never the value, and a password value never reaches Python at all (the init
+  script sends a flag); (2) a click on a terminal-looking control (pay, submit, verify, OTP -
+  `TERMINAL_TEXT_RE`, deliberately over-broad: a false positive costs one hand-written
+  `ClickStep` in review, a false negative would scaffold a forbidden click) is never recorded
+  as a step - it becomes the draft's `HANDOFF` and ends the recording; (3) the draft lands in
+  the gitignored `previews/recordings/`, never in `scripts/` - promotion is a hand move plus a
+  `Function_Mapping.md` row, so the reviewed draft passes through the same gates
+  (`test_no_direct_typing.py` included) as a hand-written errand. Recording is refused on the
+  CDP-attach path outright: the observer must never land in the Director's own browser
+  context.
 
 ## 2. Coding Standards
 
