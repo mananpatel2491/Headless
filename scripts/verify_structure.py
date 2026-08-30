@@ -57,7 +57,7 @@ def verify():
             # caches, and OS metadata are never logged in the changelog.
             if ".git" in rel_path.parts or rel_path.name == "Project_Structure.md" or "__pycache__" in rel_path.parts or rel_path.name == ".env" or "bootstrap_prompts" in rel_path.parts or "docs" in rel_path.parts:
                 continue
-            if rel_path.parts[0] in (".venv", "venv", "previews", ".pytest_cache", "chrome-profile") or rel_path.name == ".DS_Store":
+            if rel_path.parts[0] in (".venv", "venv", "previews", "reports", ".pytest_cache", "chrome-profile") or rel_path.name == ".DS_Store":
                 continue
             # Spec Kit toolkit payload and its per-feature artifacts are mapped at
             # directory level in Project_Structure.md, not file-by-file
