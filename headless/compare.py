@@ -31,13 +31,37 @@ from headless.capture import CurrentPolicy, QuoteCapture
 # real insurer's declarations page or quote page might use for it. Extend
 # by hand whenever a real insurer's own wording does not already match an
 # entry here - never by adding a fuzzy-matching or inference mechanism.
+#
+# spec 007-extraction-fidelity, FR-030, FR-031, D6: the original six
+# entries above were all auto-insurance concepts (spec 005's own scoping
+# example); a real homeowners declarations page (spec 006's own scoping
+# example) has five coverage-line concepts this table had no key for at
+# all, so two sources phrasing the identical homeowners coverage
+# differently (a current policy's own "Personal Liability" line against a
+# competing quote's own "Liability to Others" phrasing) normalized to two
+# different keys and never compared against each other (research.md Defect
+# F). This extension is a hand-authored table addition only - no fuzzy
+# matching, no learned weighting, no new comparison behavior beyond
+# matching a differently-worded real coverage line to the correct existing
+# key (unchanged from this table's own standing rule, restated in this
+# module's docstring above). "Personal Injury Protection (PIP)" needed no
+# change - `medical_payments`'s own existing alias tuple already recognizes
+# it, verified by reading the table, not merely assumed.
 _ALIASES: dict[str, tuple[str, ...]] = {
     "bodily_injury": ("bodily injury liability", "bodily injury", "bi"),
     "property_damage": ("property damage liability", "property damage", "pd"),
-    "collision": ("collision",),
+    "collision": ("collision", "standard collision"),
     "comprehensive": ("comprehensive", "comp"),
     "uninsured_motorist": ("uninsured motorist", "underinsured motorist", "um", "uim"),
     "medical_payments": ("medical payments", "personal injury protection", "pip", "medpay"),
+    # Homeowners-specific keys (FR-030): none of these five existed before
+    # spec 007-extraction-fidelity.
+    "dwelling": ("dwelling",),
+    "other_structures": ("other structures",),
+    "personal_property": ("personal property",),
+    "loss_of_use": ("loss of use",),
+    "personal_liability": ("personal liability", "liability to others"),
+    "medical_payments_to_others": ("medical payments to others",),
 }
 
 

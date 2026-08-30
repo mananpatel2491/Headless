@@ -319,6 +319,143 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   validate or reject a value by shape (there is no passphrase-or-value strength policy of any
   kind, entirely the Director's own choice), so the safeguard is this stated policy plus the
   simple fact that every login this tool needs already has a better home than the vault.
+- **Extraction fidelity: the corrected figure gate, term derivation, de-glue pass, visible
+  warnings, and schema extension (v0.0.7, spec 007-extraction-fidelity).** An independent audit
+  against three of the Director's own real declarations PDFs probe-proved that v0.0.6's own
+  pipeline destroyed or misled a confirmed reference four separate ways; each is corrected here
+  within the same confirmation-gated pipeline v0.0.6 already established - no candidate from
+  either generator reaches the cache or the comparison engine without the unchanged mandatory
+  confirmation step.
+  - **The corrected sanity-pass gate (identical tokenization on both sides).** `headless/
+    policydoc.py`'s `_strip_currency_formatting` no longer strips whitespace from the *proposed*
+    side (only `$`/commas, exactly matching how the source side is already tokenized); `_figure_
+    present` now requires EVERY digit-run token extracted from a proposed value to be a member of
+    the source's own digit-run token set - never a single whole-blob string comparison. This
+    closes the composite-figure gap a v0.0.6 audit found (a split "<amount> each person/<amount>
+    each accident" limit, a "<amount> All peril" row-labeled deductible, and a spaced
+    "NNN NNN NNN" policy number were all stripped as hallucinated, even though every one of their
+    own digit runs was verbatim in the source) while keeping spec 006's own FIX-FIRST-2
+    anti-hallucination guarantee fully intact: a hallucinated figure sharing only a digit-run
+    suffix or prefix with a real, unrelated source figure still fails, since exact per-token SET
+    MEMBERSHIP is unchanged - only how the proposed side is tokenized before that check runs.
+  - **The corrected term-derivation window (scan every occurrence, window after-only,
+    max-minus-min).** `derive_term_from_dates`'s own `_find_period_dates` no longer stops at the
+    first policy-period label occurrence or looks backward from it - it scans EVERY occurrence and
+    windows only the ~400 characters that follow each one, collecting every date that parses
+    across every window and computing the span from the MAXIMUM and MINIMUM date collected rather
+    than the first two encountered in reading order. This closes the defect where a real
+    document's own unrelated date (a statement date, an issue date) positioned before the label
+    was mis-paired with the real period's own start date, deriving a nonsense term that then
+    silently overrode a correct local-model claim under spec 006's own FR-020 rule. A new
+    `_resolve_authoritative_term` helper checks for an explicit de-glued "N-month"/"N month"
+    phrase FIRST, only falling back to this corrected date arithmetic when no phrase exists - now
+    for BOTH generators (spec 006 only ever let the regex generator's own phrase check run first;
+    the local-model generator's claim was always unconditionally replaced by date arithmetic
+    regardless of whether an explicit phrase already agreed with it). Known, accepted trade-off
+    (D2's own "Alternatives considered"): a document whose own real period dates sit ENTIRELY
+    before the label with nothing after it (spec 006's own original scrambled-column reversed-order
+    artifact, `"12/01/2026To:12/01/2025From:Policy Period:"`-shaped) is no longer derivable by this
+    helper at all - widening the window back to include "before" text would reopen exactly the
+    class of error this fix exists to close, so this is a documented residual (`test_derive_
+    term_from_dates_known_residual_when_both_dates_precede_the_label`), not a silent regression.
+  - **The de-glue pass (new, `_deglue_text`).** A single deterministic regex pass - three
+    zero-width boundary alternations (lowercase-to-uppercase, letter-to-digit, digit-to-letter),
+    one `re.sub` call - runs exactly once inside `convert_document`, on whichever text it produced
+    (the layout-aware converter's own output, or the `pypdf-raw` fallback), before any generator,
+    the term-derivation helper, or the sanity pass ever reads it. A converter-glued
+    `"Total6month"`-shaped run becomes three separate tokens (`"Total 6 month"`), unblocking the
+    "N-month" phrase pattern above. Never alters a digit's own value, a currency symbol, or any
+    existing punctuation character - its only effect is inserting new space characters. A
+    same-case glued word pair sharing neither boundary (`"eachperson"`) has no signal left for a
+    pure regex to detect and is a documented, accepted residual, surfaced unresolved at the
+    Director's own confirmation step - the same recourse spec 006 already established for its own
+    comparable gaps.
+  - **Visible warnings (new).** `PolicyReference` gains an additive `warnings` field (empty by
+    default), carried through `write_policy_reference`/`read_policy_reference_provenance` (now a
+    5-tuple) with the identical additive-only compatibility rule `generator`/`converter` already
+    established - a pre-v0.0.7 cache file with no `warnings` key reads back as `[]`, never an
+    error. `confirm_candidate` prints a distinct, explicitly labeled warnings section (a count
+    line, then each warning on its own line) BEFORE the existing "Extracted current-policy
+    candidate..." header and full JSON block - never instead of it, since the JSON already embeds
+    the same list - whenever the candidate carries at least one warning; the section does not
+    print at all when it carries zero. The audit's own three corrupted caches were each confirmed
+    with the warnings technically present but with no explicit strip-count in front of the
+    Director at the moment he decided.
+  - **Schema extension (new, ten additive fields).** `ExtractionCandidate`/`CurrentPolicy` each
+    gain `policy_number`, `effective_date`, `expiration_date`, `policy_level_deductibles`, `asset`,
+    `named_insureds`, `excluded_drivers`, `discounts`, `fees`, `subtotal` - a real declarations page
+    states more than a premium and coverage limits, and this is groundwork for a future comparison
+    feature. Every figure-shaped one (a deductible's own `value`, a discount's own `value`, a fee's
+    own `amount`, `subtotal`, `policy_number`) is subject to the identical corrected gate above;
+    `effective_date`/`expiration_date` are subject to a date-parse check instead (a failure clears
+    to `""` with a distinctly worded warning, `"...could not be parsed as a date and was
+    removed"`, never confused with a figure-strip warning); `term_months` is now COMPUTED from the
+    two explicit dates (via the same average-day arithmetic, factored into a shared `_term_from_
+    span` helper) whenever both parse - taking precedence over the phrase-or-date-window exemption,
+    never read as a separately proposed value in that case. Every text field (`asset`,
+    `named_insureds`, `excluded_drivers`, every entry `label`) is exempt, mirroring the insurer-name
+    precedent (spec 006 FR-028). The local-model prompt and `headless/localllm.py`'s own schema
+    normalizer are both extended to request/accept these ten fields LENIENTLY - a malformed or
+    omitted one degrades to its own empty shape, never a whole-candidate schema-mismatch failure,
+    since only `insurer`/`premium`/`coverages` remain hard requirements. `headless/compare.py`'s
+    own comparison engine ignores every new field except through the alias-table extension below -
+    no ranking-logic change.
+  - **Alias-table extension (new).** `headless/compare.py`'s `_ALIASES` gains five
+    homeowners-specific keys the table had none of before (`dwelling`, `other_structures`,
+    `personal_property`, `loss_of_use`, `medical_payments_to_others`) plus a `personal_liability`
+    key recognizing both a "Personal Liability" and a "Liability to Others" phrasing for the
+    identical coverage, and a "Standard Collision" alias for the existing `collision` key - a
+    hand-authored table extension only, the same fixed-phrasing shape every prior entry already
+    has, never a fuzzy-matching or inference mechanism. "Personal Injury Protection"/"PIP" needed
+    no change - `medical_payments`'s own existing alias tuple already recognized it.
+  - **Context-window guard (new).** `headless/localllm.py`'s request `options` gains an explicit
+    `num_ctx` (`DEFAULT_NUM_CTX = 16384`, overridable per call) alongside the existing
+    `"temperature": 0`; `estimate_token_count`/`context_window_warning` (a simple character-count-
+    based estimate, never a real tokenizer) add one value-free warning naming only the estimated
+    count and a THRESHOLD - `num_ctx` minus a fixed 1024-token response reserve, never `num_ctx`
+    itself - when the estimate against the FULL model prompt (not the document text alone) risks
+    silent truncation inside the model's own context window - the request is still sent either
+    way; this is a warning, never a refusal.
+  - **Opus verifier fix batch (2026-08-30), applied before commit: 2 BLOCK, 4 IMPORTANT, 4 MINOR.**
+    BLOCK 1 - the de-glue pass's own letter<->digit rule was blanket, and measured against the
+    Director's own three real declarations PDFs it corrupted real identifiers (a VIN-shaped run's
+    own survival measured 2 -> 0, a mixed identifier's 18 -> 0); corrected to fire only when a
+    maximal alphanumeric run's own total letter<->digit transition count is <= 2, its digit-side
+    segment at that boundary is <= 3 characters, and its letter-side segment there is >= 3 -
+    `"Total6month"` still de-glues; a VIN, `"ABC1234567"`, and `"Unit 4B"` now survive
+    byte-identical; `"Law60500"` stays glued (acceptable - the sanity pass still tokenizes its own
+    digit run regardless). Rule 1 (lowercase-to-uppercase) is unchanged and unaffected; its own
+    pre-existing "McDonald" -> "Mc Donald" camel-case-surname residual is now explicitly
+    documented (`named_insureds` is a text field, reviewed at confirmation - never gated, computed
+    from, or compared). BLOCK 2 - `effective_date`/`expiration_date` were only date-PARSE-checked,
+    never verified present in the source, so two internally consistent but FABRICATED dates could
+    compute and win a term with zero warnings; both fields now ALSO pass the ordinary figure gate
+    before "verified," and the term-precedence rule is restated as ONE table (identical in
+    `contracts/fidelity.md` sections 2 and 4, and in code): verified explicit dates > an explicit
+    N-month phrase > window-derived dates > the generator's own claim - a disagreement between the
+    winning tier and the next lower tier that produced a value emits one warning naming both
+    sources and both term values (structural counts, not sensitive). IMPORTANT 3 - research.md's
+    own "without weakening the check at all" claim corrected to "without weakening the per-token
+    exactness of the check" - a composite RECOMBINING two real-but-unrelated document figures still
+    passes by design; the Director's confirmation is the accepted backstop, not this gate. IMPORTANT
+    4 - a "Prior Policy Period" section alongside the current one could span a prior period's own
+    start date to the current period's own end date under the max-minus-min rule, deriving a false
+    combined term with no warning; a label occurrence preceded by "prior"/"previous"/"former"/
+    "expiring" is now excluded from contributing (and every other occurrence's own window is
+    capped at the next label occurrence's own start, so an excluded occurrence positioned before a
+    surviving one can no longer sweep the surviving one's real dates into its own exclusion set); a
+    value-free warning also fires whenever more than two distinct dates survive. IMPORTANT 5 -
+    `num_ctx`/the length estimate were measured against the document text alone (under-counting the
+    prompt template's own overhead) with no response reserve; corrected as described above, and
+    `DEFAULT_NUM_CTX` raised 8192 -> 16384 after `ollama show qwen3.5:35b` (localhost, read-only)
+    confirmed this machine's own model supports a 262144 context length. IMPORTANT 6 - the
+    "correct" branch's own follow-up prompt named a stale "insurer/premium/coverages" list that
+    predated this feature's own ten-field extension; reworded to "the same object printed above."
+    MINOR 7/8 - documented, not fixed: a phrase like "12 month rate guarantee" can still outrank a
+    correct date-derived term (accepted - visible to the Director alongside the dates themselves at
+    confirmation); a cached reference's own `warnings` field always means "at the moment of
+    review," never a live description of a hand-corrected policy's own current state. See
+    `research.md`'s own D1-D3 amendments and `contracts/fidelity.md` for the full account.
 
 ## 2. Coding Standards
 
