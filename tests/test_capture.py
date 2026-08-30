@@ -188,3 +188,50 @@ def test_current_policy_to_dict_and_from_dict_round_trip():
     )
     round_tripped = CurrentPolicy.from_dict(json.loads(json.dumps(policy.to_dict())))
     assert round_tripped == policy
+
+
+# --- spec 007-extraction-fidelity, FR-022, FR-023, D5: the ten schema----
+# extension fields.
+
+
+def test_current_policy_extended_fields_round_trip():
+    policy = CurrentPolicy(
+        insurer="Sample Mutual",
+        premium={"term_months": "12", "amount": "1200.00"},
+        coverages=[],
+        policy_number="555 666 777",
+        effective_date="01/01/2026",
+        expiration_date="01/01/2027",
+        policy_level_deductibles=[{"label": "Wind/Hail", "value": "1,000"}],
+        asset={"vehicle": "Sample Sedan LX", "vin": "TOTALLY-DISTINCTIVE-FIXTURE-VIN"},
+        named_insureds=["Test Testerson"],
+        excluded_drivers=["Sample Teen"],
+        discounts=[{"label": "Multi-Policy", "value": "50"}],
+        fees=[{"label": "Policy", "amount": "25"}],
+        subtotal="800.00",
+    )
+    round_tripped = CurrentPolicy.from_dict(json.loads(json.dumps(policy.to_dict())))
+    assert round_tripped == policy
+
+
+def test_current_policy_from_dict_defaults_the_ten_new_fields_when_absent():
+    # data-model.md's own cache-compatibility rule: a document written
+    # before this feature existed (or the Director's own hand-typed
+    # correction omitting them) defaults every one of the ten new fields to
+    # its own empty shape - never a KeyError.
+    legacy_doc = {
+        "insurer": "Sample Mutual",
+        "premium": {"term_months": "6", "amount": "600.00"},
+        "coverages": [],
+    }
+    policy = CurrentPolicy.from_dict(legacy_doc)
+    assert policy.policy_number == ""
+    assert policy.effective_date == ""
+    assert policy.expiration_date == ""
+    assert policy.policy_level_deductibles == []
+    assert policy.asset == {}
+    assert policy.named_insureds == []
+    assert policy.excluded_drivers == []
+    assert policy.discounts == []
+    assert policy.fees == []
+    assert policy.subtotal == ""

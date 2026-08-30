@@ -24,7 +24,11 @@ from headless.policydoc import (
     ExtractionCandidate,
     PolicyReference,
     _LOCAL_MODEL_FALLBACK_NOTE,
+    _deglue_text,
+    _figure_present,
     _local_candidate_is_usable,
+    _resolve_authoritative_term,
+    _source_digit_tokens,
     apply_sanity_pass,
     confirm_candidate,
     convert_document,
@@ -50,6 +54,28 @@ SCRAMBLED_DECLARATIONS_TEXT = (FIXTURES_DIR / "declarations-scrambled.txt").read
 # test below actually exercise the exemption, not merely pass because "12"
 # happened to already be present as an unrelated token.
 DATE_DERIVED_ONLY_TEXT = "Policy Period: January 5, 2025 To: January 5, 2026"
+
+# spec 007-extraction-fidelity, FR-006 through FR-009, D2: an annual
+# homeowners-style declarations text (synthetic, structure-only, NFR-002)
+# with an unrelated statement date positioned BEFORE the policy-period
+# label - exactly research.md's own Defect B shape - followed by the
+# label and the real period's own two dates, a year apart, positioned
+# AFTER it. Replaces SCRAMBLED_DECLARATIONS_TEXT for every test below that
+# exercises successful date-derivation: SCRAMBLED_DECLARATIONS_TEXT's own
+# real period dates sit entirely BEFORE its "Policy Period:" label (spec
+# 006's original scrambled-column artifact), which the corrected,
+# after-only window (FR-007) can no longer derive a term from at all - see
+# test_derive_term_from_dates_known_residual_when_both_dates_precede_the_label.
+STATEMENT_DATE_BEFORE_LABEL_TEXT = (
+    "Sample Assurance Mutual Insurance Company\n"
+    "Homeowners Declarations Page (synthetic test fixture - no real policy data)\n\n"
+    "Statement Date: 11/01/2025\n\n"
+    "Policy Period: From 01/01/2026 To 01/01/2027\n\n"
+    "Coverages:\n"
+    "Dwelling                         $300,000\n"
+    "Medical Payments                 $5,000\n\n"
+    "Total Policy Premium: $1,200.00\n"
+)
 
 
 class _FakePage:
@@ -216,6 +242,36 @@ def test_confirm_candidate_correct_returns_the_corrected_document():
     assert confirmed.premium == {"term_months": "12", "amount": "1200.00"}
 
 
+def test_confirm_candidate_correct_with_all_thirteen_keys_keeps_every_new_field():
+    # IMPORTANT 6 (Opus verifier, 2026-08-30): the prompt now names "the
+    # same object printed above" rather than a stale "insurer/premium/
+    # coverages" list - this proves a corrected paste retaining every one
+    # of CurrentPolicy's own 13 keys (insurer, premium, coverages, plus
+    # the ten schema-extension fields; warnings is NOT one of the 13,
+    # since a confirmed CurrentPolicy never carries it) round-trips every
+    # field, not only the original three.
+    corrected_document = {
+        "insurer": "Corrected Insurer",
+        "premium": {"term_months": "12", "amount": "1200.00"},
+        "coverages": [{"line": "comprehensive", "limit": "250", "deductible": "", "premium": ""}],
+        "policy_number": "555 666 777",
+        "effective_date": "01/01/2026",
+        "expiration_date": "01/01/2027",
+        "policy_level_deductibles": [{"label": "Wind/Hail", "value": "1,000"}],
+        "asset": {"vehicle": "Sample Sedan LX", "vin": "TOTALLY-DISTINCTIVE-FIXTURE-VIN"},
+        "named_insureds": ["Test Testerson"],
+        "excluded_drivers": ["Sample Teen"],
+        "discounts": [{"label": "Multi-Policy", "value": "50"}],
+        "fees": [{"label": "Policy", "amount": "25"}],
+        "subtotal": "800.00",
+    }
+    assert len(corrected_document) == 13
+    confirmed = confirm_candidate(_candidate(), input_fn=_responses("c", json.dumps(corrected_document)))
+    assert confirmed is not None
+    for key, value in corrected_document.items():
+        assert getattr(confirmed, key) == value
+
+
 def test_confirm_candidate_correct_with_unparseable_json_returns_none():
     confirmed = confirm_candidate(_candidate(), input_fn=_responses("c", "{not valid json"))
     assert confirmed is None
@@ -235,6 +291,68 @@ def test_confirm_candidate_never_calls_the_real_input_builtin(monkeypatch):
 
     monkeypatch.setattr("builtins.input", _forbidden)
     confirm_candidate(_candidate(), input_fn=_responses("d"))
+
+
+# --- spec 007-extraction-fidelity, FR-019 through FR-021, D4 (User Story 3) -
+# the confirm-prompt's own distinct warnings section.
+
+
+def _candidate_with_warnings(*warnings: str) -> ExtractionCandidate:
+    return ExtractionCandidate(
+        insurer="Sample Mutual",
+        premium={"term_months": "6", "amount": "612.00"},
+        coverages=[{"line": "collision", "limit": "500", "deductible": "500", "premium": ""}],
+        warnings=list(warnings),
+    )
+
+
+def test_confirm_candidate_prints_a_distinct_warnings_section_before_the_json_block_and_question(capsys):
+    confirm_candidate(
+        _candidate_with_warnings(
+            "a proposed premium amount did not appear in the document and was removed",
+            "a proposed collision limit did not appear in the document and was removed",
+        ),
+        input_fn=_responses("d"),
+    )
+    out = capsys.readouterr().out
+    warnings_idx = out.find("2 warning(s)")
+    json_header_idx = out.find("Extracted current-policy candidate")
+    assert warnings_idx != -1
+    assert json_header_idx != -1
+    assert warnings_idx < json_header_idx  # FR-019: warnings section prints FIRST
+    assert "a proposed premium amount did not appear in the document and was removed" in out
+    assert "a proposed collision limit did not appear in the document and was removed" in out
+    # FR-021: the section prints IN ADDITION to, never instead of, the full
+    # JSON block - which already embeds the same warnings list.
+    assert '"warnings"' in out
+
+
+def test_confirm_candidate_prints_no_warnings_section_when_there_are_zero_warnings(capsys):
+    confirm_candidate(_candidate(), input_fn=_responses("d"))
+    out = capsys.readouterr().out
+    assert "warning(s)" not in out
+    assert "Extracted current-policy candidate" in out  # the rest still prints
+
+
+def test_confirm_candidate_accepted_reference_carries_warnings_into_the_cache(tmp_path):
+    # SC-006, SC-007: the Director accepts a candidate carrying warnings;
+    # the resulting cache file's own JSON carries the same warnings list.
+    # (confirm_candidate itself only returns a CurrentPolicy, which never
+    # carries warnings - scripts/policy_extract.py threads the original
+    # candidate's own warnings through to PolicyReference, reproduced here.)
+    candidate = _candidate_with_warnings("a proposed premium amount did not appear in the document and was removed")
+    confirmed = confirm_candidate(candidate, input_fn=_responses("a"))
+    assert confirmed is not None
+    reference = PolicyReference(
+        policy=confirmed,
+        asset_key="vehicles-primary",
+        source_path="declarations.pdf",
+        confirmed_at="2026-08-29T00:00:00+00:00",
+        warnings=list(candidate.warnings),
+    )
+    path = write_policy_reference(reference, tmp_path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["warnings"] == ["a proposed premium amount did not appear in the document and was removed"]
 
 
 # --- PolicyReference / cache (T019e) ----------------------------------------
@@ -290,7 +408,9 @@ def test_read_policy_reference_returns_none_for_a_malformed_file(tmp_path):
 def test_read_policy_reference_provenance_round_trips(tmp_path):
     write_policy_reference(_reference(), tmp_path)
     provenance = read_policy_reference_provenance("vehicles-primary", tmp_path)
-    assert provenance == ("/tmp/example-policy.pdf", "2026-08-26T12:00:00+00:00", "regex-v1", "pypdf-raw")
+    # spec 007-extraction-fidelity, FR-017/FR-018: the tuple gained a 5th
+    # element, warnings - [] here since _reference() never sets it.
+    assert provenance == ("/tmp/example-policy.pdf", "2026-08-26T12:00:00+00:00", "regex-v1", "pypdf-raw", [])
 
 
 def test_read_policy_reference_provenance_returns_none_for_a_missing_file(tmp_path):
@@ -329,7 +449,29 @@ def test_read_policy_reference_provenance_defaults_to_unknown_for_a_pre_v006_cac
     }
     (policy_dir / "vehicles-primary.json").write_text(json.dumps(legacy_doc), encoding="utf-8")
     provenance = read_policy_reference_provenance("vehicles-primary", tmp_path)
-    assert provenance == ("/tmp/example-policy.pdf", "2026-08-26T12:00:00+00:00", "unknown", "unknown")
+    # spec 007-extraction-fidelity, SC-006: warnings (absent from this
+    # legacy document, same as generator/converter) defaults to [], never
+    # an error.
+    assert provenance == ("/tmp/example-policy.pdf", "2026-08-26T12:00:00+00:00", "unknown", "unknown", [])
+
+
+def test_read_policy_reference_provenance_carries_warnings_when_present(tmp_path):
+    # spec 007-extraction-fidelity, FR-017, FR-018, SC-006: a reference
+    # confirmed with warnings round-trips them through the same provenance
+    # reader.
+    write_policy_reference(
+        PolicyReference(
+            policy=CurrentPolicy(insurer="Sample Mutual", premium={"term_months": "6", "amount": ""}, coverages=[]),
+            asset_key="vehicles-primary",
+            source_path="/tmp/example-policy.pdf",
+            confirmed_at="2026-08-26T12:00:00+00:00",
+            warnings=["a proposed premium amount did not appear in the document and was removed"],
+        ),
+        tmp_path,
+    )
+    provenance = read_policy_reference_provenance("vehicles-primary", tmp_path)
+    assert provenance is not None
+    assert provenance[4] == ["a proposed premium amount did not appear in the document and was removed"]
 
 
 def test_derive_asset_key_dots_to_hyphens():
@@ -374,15 +516,36 @@ def test_derive_term_from_dates_annual_span_yields_12():
     assert result.warning is None
 
 
-def test_derive_term_from_dates_reversed_order_still_yields_12():
-    # The real document's own reversed order ("To:" date before "From:"
-    # date) is exactly the case this helper exists to survive - regardless
-    # of which date reads first in the text (research.md, data-model.md).
-    text = "12/01/2026To:12/01/2025From:Policy Period:"
+def test_derive_term_from_dates_still_yields_12_when_both_dates_follow_the_label():
+    # spec 007-extraction-fidelity, FR-007: the window is now after-only,
+    # so order among the dates that DO follow the label no longer matters -
+    # this reproduces the same "which one reads first" tolerance the old
+    # reversed-order test proved, but with both dates correctly positioned
+    # after the label (see the residual test immediately below for the
+    # shape this correction can no longer recover).
+    text = "Policy Period: To: 12/01/2025 From: 12/01/2026"
     result = derive_term_from_dates(text)
     assert result is not None
     assert result.term_months == "12"
     assert result.warning is None
+
+
+def test_derive_term_from_dates_known_residual_when_both_dates_precede_the_label():
+    # spec 007-extraction-fidelity, D2's own accepted trade-off: an
+    # after-only window (FR-007) closes Defect B (an unrelated date before
+    # the label mis-paired with the real start date) but, as a necessary
+    # consequence, can no longer recover a document whose own real period
+    # dates sit ENTIRELY before the label with nothing after it at all -
+    # this is spec 006's own original scrambled-column artifact shape
+    # ("12/01/2026To:12/01/2025From:Policy Period:", reconstructed,
+    # research.md). Widening the window back to include "before" text
+    # would reopen exactly the class of error this fix exists to close
+    # (D2's own "Alternatives considered"), so this is a documented, known
+    # residual, not a silent regression - the caller falls back to
+    # whichever value its own generator (or an explicit de-glued phrase)
+    # already proposed.
+    text = "12/01/2026To:12/01/2025From:Policy Period:"
+    assert derive_term_from_dates(text) is None
 
 
 def test_derive_term_from_dates_semiannual_span_yields_6():
@@ -432,6 +595,142 @@ def test_derive_term_from_dates_known_false_negative_when_a_date_is_glued_to_pre
     # dates are found near the label and the helper contributes nothing.
     text = "Policy Period: Invoice 99912/01/2026 to 12/01/2025"
     assert derive_term_from_dates(text) is None
+
+
+# --- spec 007-extraction-fidelity, FR-006 through FR-011, D2 (User Story 2) -
+# the corrected term-derivation window: scan every label occurrence,
+# window after-only, max-minus-min, phrase precedence over date arithmetic.
+
+
+def test_derive_term_from_dates_ignores_an_unrelated_date_positioned_before_the_label():
+    # SC-003: a statement date before the label, followed by the label and
+    # the real period's own two dates a year apart, after it. FR-007's
+    # after-only window means the statement date can never enter any
+    # window at all.
+    result = derive_term_from_dates(STATEMENT_DATE_BEFORE_LABEL_TEXT)
+    assert result is not None
+    assert result.term_months == "12"
+    assert result.warning is None
+
+
+def test_derive_term_from_dates_scans_every_label_occurrence_not_only_the_first():
+    # FR-006: the label appears twice - once in a summary section with no
+    # dates nearby at all, and again in a detailed schedule with the real
+    # period's own two dates immediately after it. Stopping at the first
+    # occurrence (spec 006's own original behavior) would find nothing.
+    text = (
+        "Summary: Policy Period: see schedule below for exact dates.\n\n"
+        "Detailed Schedule - Policy Period: 01/01/2026 to 01/01/2027\n"
+    )
+    result = derive_term_from_dates(text)
+    assert result is not None
+    assert result.term_months == "12"
+
+
+def test_derive_term_from_dates_uses_max_minus_min_across_every_window_not_first_two_in_order():
+    # FR-008: three dates altogether appear after the (single) label
+    # occurrence - a renewal-notice-shaped date sitting between the real
+    # start and end dates in reading order. The old "first two encountered"
+    # rule would pair the real start date with the renewal-notice date
+    # (10 months apart); the corrected max-minus-min rule spans the real
+    # start and end dates instead (12 months), regardless of reading order.
+    text = "Policy Period: 01/01/2026 renewal notice 11/01/2026 expires 01/01/2027"
+    result = derive_term_from_dates(text)
+    assert result is not None
+    assert result.term_months == "12"
+    # IMPORTANT 4 (Opus verifier, 2026-08-30): more than two distinct
+    # dates survived (three), so the new value-free multi-date warning
+    # fires alongside the correct term.
+    assert result.warning is not None
+    assert "more than two distinct dates" in result.warning
+
+
+# --- IMPORTANT 4 (Opus verifier, 2026-08-30): a "Prior Policy Period" ----
+# section must never contribute a date to the current period's own span.
+
+
+def test_derive_term_from_dates_excludes_a_prior_period_immediately_before_the_current_one():
+    # Two ADJACENT 6-month periods: a prior period ending exactly where
+    # the current one begins. Without the exclusion, max-minus-min across
+    # both periods' own dates would derive a false 12.
+    text = "Prior Policy Period: 01/01/2026 to 07/01/2026\nPolicy Period: 07/01/2026 to 01/01/2027\n"
+    result = derive_term_from_dates(text)
+    assert result is not None
+    assert result.term_months == "6"
+
+
+def test_derive_term_from_dates_excludes_a_prior_period_listed_after_the_current_one():
+    # The prior period section appears AFTER the current one in the text -
+    # the exclusion must work regardless of reading order, and regardless
+    # of whether the current period's own broad forward window happens to
+    # sweep over the prior section's own text incidentally.
+    text = "Policy Period: 07/01/2026 to 01/01/2027\nPrior Policy Period: 01/01/2026 to 07/01/2026\n"
+    result = derive_term_from_dates(text)
+    assert result is not None
+    assert result.term_months == "6"
+
+
+def test_derive_term_from_dates_excludes_a_previous_and_former_and_expiring_labeled_period_too():
+    for word in ("Previous", "Former", "Expiring"):
+        text = f"{word} Policy Period: 01/01/2026 to 07/01/2026\nPolicy Period: 07/01/2026 to 01/01/2027\n"
+        result = derive_term_from_dates(text)
+        assert result is not None, word
+        assert result.term_months == "6", word
+
+
+def test_resolve_authoritative_term_prefers_an_explicit_phrase_over_a_conflicting_date_derived_span():
+    # SC-004, acceptance scenario 3: a de-glued "6-month" phrase alongside
+    # two period dates that would derive a different term (12 months) - the
+    # phrase wins.
+    text = "Total 6 month Premium\nPolicy Period: 01/01/2026 to 01/01/2027"
+    result = _resolve_authoritative_term(text)
+    assert result is not None
+    assert result.term_months == "6"
+    assert result.source == "phrase"
+
+
+def test_resolve_authoritative_term_falls_back_to_date_derivation_when_no_phrase_exists():
+    result = _resolve_authoritative_term(STATEMENT_DATE_BEFORE_LABEL_TEXT)
+    assert result is not None
+    assert result.term_months == "12"
+    assert result.source == "date"
+
+
+def test_resolve_authoritative_term_returns_none_when_neither_a_phrase_nor_two_dates_exist():
+    assert _resolve_authoritative_term("Sample Assurance Mutual Insurance Company\nTotal Premium: $1,200.00\n") is None
+
+
+def test_a_glued_phrase_is_undetectable_before_deglue_but_wins_after_it():
+    # SC-004: the phrase becomes detectable by spec 006's own existing term
+    # pattern only once de-glued - this is the whole reason the de-glue
+    # pass must run before the term-derivation helper ever reads the text.
+    glued_text = "Total6monthPremium\nPolicy Period: 01/01/2026 to 01/01/2027"
+    assert _resolve_authoritative_term(glued_text).source == "date"  # phrase not yet detectable
+    deglued_text = _deglue_text(glued_text)
+    result = _resolve_authoritative_term(deglued_text)
+    assert result.source == "phrase"
+    assert result.term_months == "6"
+
+
+def test_generate_candidate_via_local_model_prefers_an_explicit_phrase_over_the_models_own_conflicting_claim():
+    # SC-004, acceptance scenario 4: the local-model candidate's own
+    # claimed term disagrees with a phrase found in the de-glued text - the
+    # phrase wins, with a value-free note naming the phrase (not the date
+    # derivation) as the correction's own source.
+    document = ConvertedDocument(
+        text="Total 6 month Premium\nPolicy Period: 01/01/2026 to 01/01/2027",
+        converter="pymupdf4llm",
+    )
+    candidate = generate_candidate_via_local_model(
+        document,
+        model="m",
+        url="http://localhost:11434",
+        transport=lambda url, payload, timeout: _valid_local_model_response(term_months="12"),
+    )
+    assert candidate is not None
+    assert candidate.premium["term_months"] == "6"
+    assert "term_months derived from an explicit N-month phrase overrode the model's own claim" in candidate.warnings
+    assert "term_months derived from policy-period dates overrode the model's own claim" not in candidate.warnings
 
 
 # --- convert_document (spec 006-policy-extraction-v2, FR-001, FR-002, D2) ---
@@ -485,6 +784,124 @@ def test_convert_document_never_calls_the_real_pymupdf4llm_when_a_fake_is_inject
     assert document.converter == "pymupdf4llm"
 
 
+# --- _deglue_text (spec 007-extraction-fidelity, FR-012 through FR-016, D3) -
+
+
+def test_deglue_text_inserts_a_space_at_a_lowercase_to_uppercase_boundary():
+    assert _deglue_text("PolicyPeriod") == "Policy Period"
+
+
+def test_deglue_text_inserts_a_space_at_letter_to_digit_and_digit_to_letter_boundaries():
+    # contracts/fidelity.md section 3's own worked shape: a label glued
+    # directly to its own digit and unit becomes three separate tokens
+    # after both boundary rules apply.
+    assert _deglue_text("Total6month") == "Total 6 month"
+
+
+def test_deglue_text_handles_all_three_boundary_rules_in_one_glued_run():
+    assert _deglue_text("Total6monthPremium") == "Total 6 month Premium"
+
+
+def test_deglue_text_leaves_a_same_case_glued_word_pair_unresolved():
+    # FR-015: a known, accepted residual - "eachperson" has no case
+    # transition and no digit anywhere at the seam, so there is no
+    # boundary signal left for a pure regex to detect; it surfaces
+    # unresolved at the Director's own confirmation step.
+    assert _deglue_text("eachperson") == "eachperson"
+    assert _deglue_text("Allperil") == "Allperil"
+
+
+def test_deglue_text_never_alters_a_digit_currency_symbol_or_existing_punctuation():
+    text = "$1,000.50 All-Perils, 6-month term, NNN-NN-NNNN"
+    result = _deglue_text(text)
+    # de-glue only ever INSERTS a space at a boundary - every other
+    # character (digits, "$", ",", ".", "-") survives unchanged and in the
+    # same relative order; stripping whitespace from both sides proves
+    # nothing else was altered, added, or removed.
+    assert "".join(result.split()) == "".join(text.split())
+
+
+def test_deglue_text_handles_falsy_input():
+    assert _deglue_text("") == ""
+    assert _deglue_text(None) == ""
+
+
+def test_deglue_text_leaves_already_spaced_text_unchanged():
+    assert _deglue_text(_CLEAN_DECLARATIONS_TEXT) == _CLEAN_DECLARATIONS_TEXT
+
+
+# --- BLOCK 1 (Opus verifier, 2026-08-30): the corrected, precise -----------
+# letter<->digit rule must never fire inside a real identifier. Every
+# shape below is the exact canonical set the verifier's own probe against
+# the Director's three real declarations PDFs constructed.
+
+
+def test_deglue_text_still_deglues_a_glued_label_and_figure():
+    # The corrected rule's own positive case, re-confirmed: short digit
+    # side, long letter side, <=2 transitions in the run.
+    assert _deglue_text("Total6month") == "Total 6 month"
+
+
+def test_deglue_text_leaves_a_vin_shaped_run_byte_identical():
+    # A 17-character VIN-shaped run mixes letters and digits far more
+    # densely than a glued label ever does (more than 2 transitions) -
+    # condition (a) alone protects it; measured on the real PDFs, the OLD
+    # blanket rule reduced VIN-shaped run survival 2 -> 0.
+    vin_shaped = "1HGCM82633A123456"
+    assert _deglue_text(vin_shaped) == vin_shaped
+
+
+def test_deglue_text_leaves_a_long_letter_prefix_short_digit_suffix_identifier_unchanged():
+    # 1 transition (<=2), but the digit-side segment is long (7 chars,
+    # NOT <=3) - condition (b) protects it even with few transitions.
+    assert _deglue_text("ABC1234567") == "ABC1234567"
+
+
+def test_deglue_text_leaves_a_short_letter_suffix_unit_number_unchanged():
+    # 1 transition, short digit side (1 char, <=3), but the letter-side
+    # segment is only 1 character (NOT >=3) - condition (c) protects it.
+    assert _deglue_text("Unit 4B") == "Unit 4B"
+
+
+def test_deglue_text_leaves_a_label_glued_to_a_long_digit_run_glued_acceptable():
+    # 1 transition, long digit side (5 chars, NOT <=3) - stays glued. This
+    # is an accepted residual (FR-015): the sanity pass still tokenizes the
+    # digit run "60500" on its own merits regardless of the adjacent
+    # letters, so nothing is lost for figure-gating purposes.
+    assert _deglue_text("Law60500") == "Law60500"
+
+
+def test_deglue_text_camel_case_surname_residual_is_documented_and_accepted():
+    # Known, accepted residual of rule 1 (lowercase-to-uppercase, UNCHANGED
+    # by BLOCK 1): a camel-case surname glued by the same converter
+    # artifact renders spaced - rule 1 cannot distinguish this from a
+    # genuine glued word boundary without a maintained surname exception
+    # list (rejected for the same reason D3 already rejects one for the
+    # gluing detector itself). Surfaces unresolved at the Director's own
+    # confirmation step (named_insureds is a text field, FR-027).
+    assert _deglue_text("McDonald") == "Mc Donald"
+
+
+def test_convert_document_applies_deglue_to_the_layout_converters_own_output():
+    def fake_layout_converter(path):
+        return "Total6month Premium"
+
+    document = convert_document(Path("x.pdf"), layout_converter=fake_layout_converter)
+    assert document is not None
+    assert document.text == "Total 6 month Premium"
+
+
+def test_convert_document_applies_deglue_to_the_pypdf_fallback_text_too():
+    # FR-016: the transformation runs regardless of which converter
+    # produced the text.
+    document = convert_document(
+        Path("x.pdf"), reader_factory=_reader(["Total6month Premium"]), layout_converter=lambda p: ""
+    )
+    assert document is not None
+    assert document.converter == "pypdf-raw"
+    assert document.text == "Total 6 month Premium"
+
+
 # --- generate_candidate_via_local_model (spec 006-policy-extraction-v2, FR-004, FR-005, FR-010) ---
 
 
@@ -522,7 +939,12 @@ def test_generate_candidate_via_local_model_receives_the_converted_text():
 
 
 def test_generate_candidate_via_local_model_derives_term_from_dates_when_omitted():
-    document = ConvertedDocument(text=SCRAMBLED_DECLARATIONS_TEXT, converter="pymupdf4llm")
+    # spec 007-extraction-fidelity: STATEMENT_DATE_BEFORE_LABEL_TEXT (not
+    # SCRAMBLED_DECLARATIONS_TEXT - see the fixture's own comment above)
+    # places an unrelated date before the label and the real period's own
+    # two dates after it, which the corrected after-only window derives
+    # correctly.
+    document = ConvertedDocument(text=STATEMENT_DATE_BEFORE_LABEL_TEXT, converter="pymupdf4llm")
     candidate = generate_candidate_via_local_model(
         document,
         model="m",
@@ -536,7 +958,7 @@ def test_generate_candidate_via_local_model_derives_term_from_dates_when_omitted
 
 
 def test_generate_candidate_via_local_model_overrides_a_wrong_claimed_term():
-    document = ConvertedDocument(text=SCRAMBLED_DECLARATIONS_TEXT, converter="pymupdf4llm")
+    document = ConvertedDocument(text=STATEMENT_DATE_BEFORE_LABEL_TEXT, converter="pymupdf4llm")
     candidate = generate_candidate_via_local_model(
         document,
         model="m",
@@ -802,14 +1224,124 @@ def test_apply_sanity_pass_never_strips_a_clean_regex_derived_candidate():
     assert result.warnings == candidate.warnings
 
 
+# --- spec 007-extraction-fidelity, FR-001 through FR-005, D1: the -------
+# corrected per-token gate (User Story 1 / SC-001, SC-002). Every amount
+# below is wholly synthetic (NFR-002) - structural reproductions of
+# research.md's own reconstructed shapes, never a real figure.
+
+_COMPOSITE_FIGURE_SOURCE_TEXT = (
+    "Sample Assurance Mutual Insurance Company\n"
+    "Personal Liability          12,345 each person/54,321 each accident\n"
+    "All Perils Deductible: 2,222 All peril\n"
+    "Policy Number: 111 222 333\n"
+    "Coverage A: $150,000\n"
+    "Coverage B: $2,500\n"
+)
+
+
+def test_figure_present_accepts_a_split_composite_figure_with_row_labels():
+    # SC-001, contracts section 1's own worked shape: "<A> each person/<B>
+    # each accident" - every digit run is a member of the source's own
+    # token set, so the check passes even though each part also carries
+    # label words the old whole-blob check would have choked on.
+    source_tokens = _source_digit_tokens(_COMPOSITE_FIGURE_SOURCE_TEXT)
+    assert _figure_present("12,345 each person/54,321 each accident", source_tokens) is True
+
+
+def test_figure_present_accepts_a_labeled_deductible_cell():
+    source_tokens = _source_digit_tokens(_COMPOSITE_FIGURE_SOURCE_TEXT)
+    assert _figure_present("2,222 All peril", source_tokens) is True
+
+
+def test_figure_present_accepts_a_spaced_digit_group_identifier():
+    # SC-001: a policy-number-shaped value with internal spaces between
+    # three digit groups - the source's own tokenizer already splits it the
+    # same way, so each of the three groups is checked as its own token.
+    source_tokens = _source_digit_tokens(_COMPOSITE_FIGURE_SOURCE_TEXT)
+    assert _figure_present("111 222 333", source_tokens) is True
+
+
+def test_figure_present_still_strips_a_digit_run_suffix_collision_under_the_corrected_gate():
+    # SC-002, FR-005: the hard anti-hallucination invariant is unchanged -
+    # "1,500" shares only a digit-run suffix with the source's own
+    # "150,000" and must still fail, exactly as spec 006's own FIX-FIRST 2
+    # already proved before this correction.
+    source_tokens = _source_digit_tokens(_COMPOSITE_FIGURE_SOURCE_TEXT)
+    assert _figure_present("1,500", source_tokens) is False
+
+
+def test_figure_present_still_strips_a_digit_run_prefix_collision_under_the_corrected_gate():
+    source_tokens = _source_digit_tokens(_COMPOSITE_FIGURE_SOURCE_TEXT)
+    assert _figure_present("2,500 each person/9,999 each accident", source_tokens) is False
+
+
+def test_figure_present_still_exempts_a_non_numeric_value_under_the_corrected_gate():
+    source_tokens = _source_digit_tokens(_COMPOSITE_FIGURE_SOURCE_TEXT)
+    assert _figure_present("N/A", source_tokens) is True
+
+
+def test_apply_sanity_pass_leaves_a_verbatim_composite_figure_unchanged():
+    # SC-001, acceptance scenario 1: the corrected sanity pass leaves the
+    # composite figure exactly as printed, with no warning for that field.
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[
+            {
+                "line": "personal_liability",
+                "limit": "12,345 each person/54,321 each accident",
+                "deductible": "",
+                "premium": "",
+            }
+        ],
+        warnings=[],
+    )
+    result = apply_sanity_pass(candidate, _COMPOSITE_FIGURE_SOURCE_TEXT)
+    assert result.coverages[0]["limit"] == "12,345 each person/54,321 each accident"
+    assert result.warnings == []
+
+
+def test_apply_sanity_pass_leaves_a_spaced_policy_number_shaped_figure_unchanged():
+    # SC-001, acceptance scenario 2 (exercised via a coverage-line figure
+    # field here - the dedicated policy_number field is added in the
+    # schema-extension phase below and reuses this identical gate).
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[{"line": "identifier", "limit": "111 222 333", "deductible": "", "premium": ""}],
+        warnings=[],
+    )
+    result = apply_sanity_pass(candidate, _COMPOSITE_FIGURE_SOURCE_TEXT)
+    assert result.coverages[0]["limit"] == "111 222 333"
+    assert result.warnings == []
+
+
+def test_apply_sanity_pass_still_strips_a_hallucination_sharing_only_a_digit_run_with_a_composite_source():
+    # SC-002, acceptance scenario 3: a figure sharing a digit-run
+    # suffix/prefix with a real source figure, but equal to none of the
+    # source's own tokens, is still stripped even under the corrected,
+    # composite-figure-tolerant gate.
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[{"line": "coverage_a", "limit": "1,500", "deductible": "", "premium": ""}],
+        warnings=[],
+    )
+    result = apply_sanity_pass(candidate, _COMPOSITE_FIGURE_SOURCE_TEXT)
+    assert result.coverages[0]["limit"] == ""
+    assert "a proposed coverage_a limit did not appear in the document and was removed" in result.warnings
+
+
 # --- extract_candidate_v2: end-to-end dispatch (spec 006-policy-extraction-v2) ---
 
 
 def test_extract_candidate_v2_end_to_end_derives_annual_term_via_local_model():
-    # User Story 1 / SC-001: the real document's own scrambled-column,
-    # no-explicit-term shape, via a fake local-model transport.
+    # User Story 1 / SC-001: an annual, no-explicit-term-phrase declarations
+    # shape with an unrelated date before the label (spec 007-extraction-
+    # fidelity's own corrected after-only window), via a fake local-model
+    # transport.
     def fake_layout_converter(path):
-        return SCRAMBLED_DECLARATIONS_TEXT
+        return STATEMENT_DATE_BEFORE_LABEL_TEXT
 
     result = extract_candidate_v2(
         Path("declarations.pdf"),
@@ -1133,3 +1665,276 @@ def test_extract_candidate_v2_prints_nothing_extra_when_use_llm_is_false_and_reg
     assert result is None
     out = capsys.readouterr().out
     assert _LOCAL_MODEL_FALLBACK_NOTE not in out
+
+
+# --- spec 007-extraction-fidelity, FR-022 through FR-027, D5 (User Story 4) -
+# the schema extension's own ten new fields, gated the same way the
+# corrected sanity pass already gates every existing figure. Every value
+# below is wholly synthetic (NFR-002).
+
+_SCHEMA_EXTENSION_SOURCE_TEXT = (
+    "Sample Assurance Mutual Insurance Company\n"
+    "Policy Number: 555 666 777\n"
+    "Effective Date: 01/01/2026   Expiration Date: 01/01/2027\n"
+    "Wind/Hail Deductible: 1,000\n"
+    "Multi-Policy Discount: 50\n"
+    "Policy Fee: 25\n"
+    "Subtotal: 800.00\n"
+)
+
+
+def test_apply_sanity_pass_extended_figure_fields_pass_through_when_verbatim():
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[],
+        warnings=[],
+        policy_number="555 666 777",
+        effective_date="01/01/2026",
+        expiration_date="01/01/2027",
+        policy_level_deductibles=[{"label": "Wind/Hail", "value": "1,000"}],
+        asset={"vehicle": "Sample Sedan LX", "vin": "TOTALLY-DISTINCTIVE-FIXTURE-VIN"},
+        named_insureds=["Test Testerson"],
+        excluded_drivers=["Sample Teen"],
+        discounts=[{"label": "Multi-Policy", "value": "50"}],
+        fees=[{"label": "Policy", "amount": "25"}],
+        subtotal="800.00",
+    )
+    result = apply_sanity_pass(candidate, _SCHEMA_EXTENSION_SOURCE_TEXT)
+    assert result.policy_number == "555 666 777"
+    assert result.effective_date == "01/01/2026"
+    assert result.expiration_date == "01/01/2027"
+    # FR-024: term_months is COMPUTED from the two dates - never read as a
+    # separately proposed value once both parse.
+    assert result.premium["term_months"] == "12"
+    assert result.policy_level_deductibles[0]["value"] == "1,000"
+    assert result.discounts[0]["value"] == "50"
+    assert result.fees[0]["amount"] == "25"
+    assert result.subtotal == "800.00"
+    assert result.warnings == []
+
+
+def test_apply_sanity_pass_strips_hallucinated_extended_figure_fields():
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[],
+        warnings=[],
+        policy_number="999 888 777",
+        policy_level_deductibles=[{"label": "Wind/Hail", "value": "999999"}],
+        discounts=[{"label": "Multi-Policy", "value": "999999"}],
+        fees=[{"label": "Policy", "amount": "999999"}],
+        subtotal="999999",
+    )
+    result = apply_sanity_pass(candidate, _SCHEMA_EXTENSION_SOURCE_TEXT)
+    assert result.policy_number == ""
+    assert result.policy_level_deductibles[0]["value"] == ""
+    assert result.discounts[0]["value"] == ""
+    assert result.fees[0]["amount"] == ""
+    assert result.subtotal == ""
+    assert "a proposed policy_number did not appear in the document and was removed" in result.warnings
+    assert "a proposed Wind/Hail deductible value did not appear in the document and was removed" in result.warnings
+    assert "a proposed Multi-Policy discount value did not appear in the document and was removed" in result.warnings
+    assert "a proposed Policy fee amount did not appear in the document and was removed" in result.warnings
+    assert "a proposed subtotal did not appear in the document and was removed" in result.warnings
+
+
+def test_apply_sanity_pass_clears_an_unparseable_effective_or_expiration_date():
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[],
+        warnings=[],
+        effective_date="not-a-date",
+        expiration_date="also-not-a-date",
+    )
+    result = apply_sanity_pass(candidate, _SCHEMA_EXTENSION_SOURCE_TEXT)
+    assert result.effective_date == ""
+    assert result.expiration_date == ""
+    assert "effective_date could not be parsed as a date and was removed" in result.warnings
+    assert "expiration_date could not be parsed as a date and was removed" in result.warnings
+    # Neither date parsed: term_months is never computed from them, and
+    # falls back to the ordinary (still-empty) handling.
+    assert result.premium["term_months"] == ""
+
+
+# --- BLOCK 2 (Opus verifier, 2026-08-30): a well-formed but fabricated ---
+# date must never win term precedence. Every date/figure below is
+# synthetic (NFR-002).
+
+
+def test_apply_sanity_pass_clears_a_well_formed_but_fabricated_effective_or_expiration_date():
+    # Both dates PARSE successfully (valid calendar dates) but neither is
+    # actually stated anywhere in the source - the exact fabrication BLOCK
+    # 2 exists to close: two internally consistent but invented dates must
+    # not silently compute and win a term.
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[],
+        warnings=[],
+        effective_date="03/03/2099",
+        expiration_date="03/03/2100",
+    )
+    result = apply_sanity_pass(candidate, _SCHEMA_EXTENSION_SOURCE_TEXT)
+    assert result.effective_date == ""
+    assert result.expiration_date == ""
+    assert "a proposed effective_date did not appear in the document and was removed" in result.warnings
+    assert "a proposed expiration_date did not appear in the document and was removed" in result.warnings
+    assert result.premium["term_months"] == ""
+
+
+def test_apply_sanity_pass_verified_dates_outrank_an_explicit_phrase_with_a_disagreement_warning():
+    # The de-glued text states an explicit "6-month" phrase, but the
+    # candidate's own effective_date/expiration_date are BOTH verified
+    # (present in the source, both parse) a full year apart - per the ONE
+    # precedence table, verified explicit dates win over a phrase, with a
+    # value-free disagreement warning naming both sources' own term
+    # values (structural counts, not sensitive).
+    source_text = (
+        "Sample Assurance Mutual Insurance Company\n"
+        "Total 6 month Premium\n"
+        "Effective Date: 01/01/2026   Expiration Date: 01/01/2027\n"
+    )
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[],
+        warnings=[],
+        effective_date="01/01/2026",
+        expiration_date="01/01/2027",
+    )
+    result = apply_sanity_pass(candidate, source_text)
+    assert result.effective_date == "01/01/2026"
+    assert result.expiration_date == "01/01/2027"
+    assert result.premium["term_months"] == "12"
+    assert (
+        "term_months from verified explicit dates (12) overrode an explicit N-month phrase (6)"
+        in result.warnings
+    )
+
+
+def test_apply_sanity_pass_verified_dates_matching_the_phrase_produce_no_disagreement_warning():
+    source_text = (
+        "Sample Assurance Mutual Insurance Company\n"
+        "Total 12 month Premium\n"
+        "Effective Date: 01/01/2026   Expiration Date: 01/01/2027\n"
+    )
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[],
+        warnings=[],
+        effective_date="01/01/2026",
+        expiration_date="01/01/2027",
+    )
+    result = apply_sanity_pass(candidate, source_text)
+    assert result.premium["term_months"] == "12"
+    assert not any("overrode" in w for w in result.warnings)
+
+
+def test_apply_sanity_pass_verified_dates_outrank_the_generators_own_claim_with_a_disagreement_warning():
+    # No phrase and no derivable date-window in the source at all (the two
+    # explicit fields are the ONLY date information present) - verified
+    # dates still outrank whatever the generator itself separately claimed.
+    source_text = (
+        "Sample Assurance Mutual Insurance Company\n"
+        "Effective Date: 01/01/2026   Expiration Date: 01/01/2027\n"
+    )
+    candidate = ExtractionCandidate(
+        insurer="Sample Assurance Mutual",
+        premium={"term_months": "1", "amount": ""},
+        coverages=[],
+        warnings=[],
+        effective_date="01/01/2026",
+        expiration_date="01/01/2027",
+    )
+    result = apply_sanity_pass(candidate, source_text)
+    assert result.premium["term_months"] == "12"
+    assert "term_months from verified explicit dates (12) overrode the generator's own claim (1)" in result.warnings
+
+
+def test_apply_sanity_pass_never_checks_any_of_the_new_text_fields():
+    # T017: mirrors test_apply_sanity_pass_never_checks_insurer_or_coverage_
+    # line_name - asset, named_insureds, excluded_drivers, and every entry
+    # label are exempt (FR-027), regardless of source-text content.
+    candidate = ExtractionCandidate(
+        insurer="Sample Mutual",
+        premium={"term_months": "", "amount": ""},
+        coverages=[],
+        warnings=[],
+        asset={"address": "TOTALLY-DISTINCTIVE-FIXTURE-ADDRESS"},
+        named_insureds=["TOTALLY-DISTINCTIVE-FIXTURE-NAME"],
+        excluded_drivers=["TOTALLY-DISTINCTIVE-FIXTURE-DRIVER"],
+        policy_level_deductibles=[{"label": "TOTALLY-DISTINCTIVE-FIXTURE-DEDUCTIBLE-LABEL", "value": ""}],
+        discounts=[{"label": "TOTALLY-DISTINCTIVE-FIXTURE-DISCOUNT-LABEL", "value": ""}],
+        fees=[{"label": "TOTALLY-DISTINCTIVE-FIXTURE-FEE-LABEL", "amount": ""}],
+    )
+    result = apply_sanity_pass(candidate, _CLEAN_DECLARATIONS_TEXT)
+    assert result.asset == {"address": "TOTALLY-DISTINCTIVE-FIXTURE-ADDRESS"}
+    assert result.named_insureds == ["TOTALLY-DISTINCTIVE-FIXTURE-NAME"]
+    assert result.excluded_drivers == ["TOTALLY-DISTINCTIVE-FIXTURE-DRIVER"]
+    assert result.policy_level_deductibles[0]["label"] == "TOTALLY-DISTINCTIVE-FIXTURE-DEDUCTIBLE-LABEL"
+    assert result.discounts[0]["label"] == "TOTALLY-DISTINCTIVE-FIXTURE-DISCOUNT-LABEL"
+    assert result.fees[0]["label"] == "TOTALLY-DISTINCTIVE-FIXTURE-FEE-LABEL"
+    assert result.warnings == []
+
+
+def test_generate_candidate_via_local_model_captures_the_ten_new_fields():
+    # FR-029: the local-model generator reads the ten new fields from the
+    # model's own response, same as insurer/premium/coverages already are.
+    document = ConvertedDocument(text=_SCHEMA_EXTENSION_SOURCE_TEXT, converter="pymupdf4llm")
+
+    def transport(url, payload, timeout):
+        return {
+            "response": json.dumps(
+                {
+                    "insurer": "Sample Assurance Mutual",
+                    "premium": {"term_months": "", "amount": ""},
+                    "coverages": [],
+                    "policy_number": "555 666 777",
+                    "effective_date": "01/01/2026",
+                    "expiration_date": "01/01/2027",
+                    "policy_level_deductibles": [{"label": "Wind/Hail", "value": "1,000"}],
+                    "asset": {"address": "TOTALLY-DISTINCTIVE-FIXTURE-ADDRESS"},
+                    "named_insureds": ["Test Testerson"],
+                    "excluded_drivers": [],
+                    "discounts": [{"label": "Multi-Policy", "value": "50"}],
+                    "fees": [{"label": "Policy", "amount": "25"}],
+                    "subtotal": "800.00",
+                }
+            )
+        }
+
+    candidate = generate_candidate_via_local_model(document, model="m", url="http://localhost:11434", transport=transport)
+    assert candidate is not None
+    assert candidate.policy_number == "555 666 777"
+    assert candidate.effective_date == "01/01/2026"
+    assert candidate.expiration_date == "01/01/2027"
+    assert candidate.policy_level_deductibles == [{"label": "Wind/Hail", "value": "1,000"}]
+    assert candidate.asset == {"address": "TOTALLY-DISTINCTIVE-FIXTURE-ADDRESS"}
+    assert candidate.named_insureds == ["Test Testerson"]
+    assert candidate.discounts == [{"label": "Multi-Policy", "value": "50"}]
+    assert candidate.fees == [{"label": "Policy", "amount": "25"}]
+    assert candidate.subtotal == "800.00"
+
+
+def test_generate_candidate_via_local_model_defaults_the_ten_new_fields_when_the_model_omits_them():
+    # The model's own response may omit every new field entirely (spec
+    # 006's own original response shape) - none of this feature's own
+    # additions may turn that into a schema-mismatch failure.
+    document = ConvertedDocument(text=SCRAMBLED_DECLARATIONS_TEXT, converter="pymupdf4llm")
+    candidate = generate_candidate_via_local_model(
+        document, model="m", url="http://localhost:11434", transport=lambda url, payload, timeout: _valid_local_model_response()
+    )
+    assert candidate is not None
+    assert candidate.policy_number == ""
+    assert candidate.effective_date == ""
+    assert candidate.expiration_date == ""
+    assert candidate.policy_level_deductibles == []
+    assert candidate.asset == {}
+    assert candidate.named_insureds == []
+    assert candidate.excluded_drivers == []
+    assert candidate.discounts == []
+    assert candidate.fees == []
+    assert candidate.subtotal == ""

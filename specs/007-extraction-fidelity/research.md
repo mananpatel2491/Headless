@@ -136,12 +136,24 @@ token set - never require the value's own single, un-split cleaned string to mat
 anti-hallucination guarantee it enforces is exactly right - it is that the check applies the same
 per-token tokenization to the source text but a different, whole-blob tokenization to the proposed
 value. Making both sides go through the identical tokenization closes the composite-figure and
-spaced-identifier gaps (Defect A) without weakening the check at all: a hallucinated figure sharing
-only a digit-run suffix or prefix with a real, unrelated source figure still fails, because that
-figure's own digit run is still checked for exact set membership, never substring containment (spec
-006's own FIX-FIRST-2 guarantee, unchanged and restated as FR-005). A value with no digit run
-(a purely textual value like an insurer's own name, already exempt) is unaffected, since it never
-reaches the per-token check to begin with.
+spaced-identifier gaps (Defect A) without weakening the per-token exactness of the check at all: a
+hallucinated figure sharing only a digit-run suffix or prefix with a real, unrelated source figure
+still fails, because that figure's own digit run is still checked for exact set membership, never
+substring containment (spec 006's own FIX-FIRST-2 guarantee, unchanged and restated as FR-005). A
+value with no digit run (a purely textual value like an insurer's own name, already exempt) is
+unaffected, since it never reaches the per-token check to begin with.
+
+**IMPORTANT 3 (Opus verifier, 2026-08-30) - a narrower, more honest claim than "without weakening the
+check at all"**: the per-token rule closes Defect A (a composite or spaced figure built ENTIRELY from
+the source's own tokens), but it deliberately does not, and cannot, detect RECOMBINATION - a proposed
+figure built by joining two tokens that are each independently present in the source, but never
+actually adjacent or associated with each other there (for example, a proposed `"<A>/<B>"` where the
+source states `<A>` on one coverage line and `<B>` on a wholly unrelated one). Per-token membership
+is, by design, insensitive to which tokens co-occur or in what combination - that is a strictly
+harder problem (associating a token with its own surrounding context) this feature does not attempt
+to solve. This is a known, accepted gap, not a silent weakening: the Director's own mandatory
+confirmation step is the backstop the spec's own Assumptions section already names for exactly this
+class of residual risk, the same way it is for every other gap this document records.
 
 **Alternatives considered**: stripping label words (letters) from the proposed value before
 comparing, rather than tokenizing by digit run (rejected - this would require a list of which words
@@ -188,6 +200,45 @@ does not need); always trusting the local model's own claimed term over any deri
 (rejected - this is the exact opposite of spec 006 FR-020's own reasoning, and the local model has no
 way to verify its own claim against the document the way a deterministic date scan can).
 
+**MINOR 7 (Opus verifier, 2026-08-30) - accepted residual, phrase false positive**: preferring an
+explicit phrase unconditionally over date arithmetic (this D2's own decision, above) has its own
+narrow failure mode this feature accepts rather than solves: a declarations page stating something
+like "12 month rate guarantee" (a phrase about a RATE guarantee, not the policy's own term) would
+still match `_TERM_RE` and outrank a correct date-derived term. This is accepted, not fixed, for the
+same reason D2's own decision favors a stated phrase over indirect arithmetic in the first place - the
+Director's own confirmation step is visible and immediate, and a wrong "12" sitting beside two dates
+that plainly span a different number of months is one of the easier, more legible mistakes for a human
+reviewer to catch at that step, unlike a silently wrong number with no textual anchor to compare it
+against.
+
+**IMPORTANT 4 (Opus verifier, 2026-08-30) - amendment, the multi-period residual**: scanning every
+label occurrence and taking the max-minus-min span (this D2's own decision) initially introduced a
+NEW class of error this decision's own original evidence never covered: a real declarations page can
+carry more than one period section in the same document - a "Prior Policy Period" or "Previous
+Period" alongside the current one - and max-minus-min across every window would then span a prior
+period's own start date to the current period's own end date, deriving a false combined term with no
+warning at all (a regression against spec 006's own regex-path behavior, which only ever inspected the
+first occurrence and so never encountered this shape). Fixed by excluding a label occurrence
+immediately preceded by "prior"/"previous"/"former"/"expiring" from contributing its own window, with
+that occurrence's own dates additionally excluded from every OTHER occurrence's window too (an
+excluded occurrence positioned textually BEFORE a surviving one would otherwise sweep its own
+overly-broad forward window across the surviving occurrence's real dates and mark them "excluded" by
+association - both reading orders are covered by capping every occurrence's own window at the START of
+the next label occurrence, never past it). A residual this fix does not attempt to solve: a document
+using a wholly different word for its own prior-period label (neither "prior," "previous," "former,"
+nor "expiring") would not be excluded - the value-free warning this fix also adds (more than two
+distinct dates survived) at least surfaces that a multi-date situation existed, for the Director's own
+review, even on a document phrasing this exclusion list does not yet recognize.
+
+**BLOCK 2 (Opus verifier, 2026-08-30) - amendment, verified explicit dates added as the new top tier**:
+this D2's own two-tier precedence (phrase, then date-window arithmetic) is superseded by a four-tier
+precedence once the schema extension's own `effective_date`/`expiration_date` fields exist (D5, FR-023):
+VERIFIED explicit dates (both fields present in the source AND both parse) now outrank an explicit
+phrase, which still outranks date-window arithmetic, which still outranks whatever the generator
+itself separately proposed. The original two-tier order (phrase over date-window arithmetic) is
+otherwise unchanged and is now the SECOND and THIRD tiers of the same table - see
+contracts/fidelity.md section 2 for the restated, single canonical table.
+
 ## D3. The de-glue pass: boundary-insertion regex, run once at conversion time
 
 **Decision**: insert a single space at every lowercase-to-uppercase letter boundary and at every
@@ -220,6 +271,36 @@ that a handful of regex substitutions already solve deterministically and for fr
 converters (rejected - spec 006's own D2 already evaluated and rejected the alternative converters
 available, and this feature's own audit evidence is a narrower gluing behavior within the chosen
 converter's own output, not a reason to revisit that earlier, broader evaluation).
+
+**BLOCK 1 (Opus verifier, 2026-08-30) - amendment, the letter<->digit rule corrected from blanket to
+precise**: measured directly against the Director's own three real declarations PDFs, this D3's own
+original blanket letter<->digit insertion also fired INSIDE real identifiers - a 17-character
+VIN-shaped run and a mixed alphanumeric policy/unit-number run both lost their own internal
+digit-letter boundaries across the three documents (VIN-shaped run survival measured 2 -> 0; mixed
+identifier survival measured 18 -> 0). An identifier is a text field (FR-027), so nothing downstream
+would ever have stripped the corrupted result - it would have been cached and shown to the Director
+exactly as corrupted. The corrected rule (contracts/fidelity.md section 3) makes rules 2/3
+conditional on the shape of the surrounding maximal alphanumeric run: a boundary gains a space only
+when the run's own total letter<->digit transition count is <= 2, the digit-side segment at that
+boundary is <= 3 characters, and the letter-side segment there is >= 3 characters - a real identifier
+mixes letters and digits far more densely, or carries a much longer digit run, than a glued
+label-plus-figure ever does, so this precise rule still de-glues "Total6month"-shaped text while
+leaving a VIN, a policy number, and a spaced unit number byte-identical. Rule 1
+(lowercase-to-uppercase) is unaffected by this correction - it remains the simple, unconditional
+boundary insertion D3's own original decision already established, since a case transition carries no
+comparable identifier-corruption risk (a VIN, a policy number, and a unit number are conventionally
+all-uppercase or all-digits, never mixed-case).
+
+**BLOCK 1 - new, accepted residual (camel-case surnames)**: rule 1 (unchanged by this correction) has
+its own pre-existing, now explicitly documented side effect: a camel-case surname glued into
+`named_insureds` by the same converter artifact ("McDonald"-shaped) renders spaced ("Mc Donald"-shaped)
+after de-gluing. Rule 1 cannot distinguish a glued word boundary from a genuine internal case
+transition inside one real word without a maintained surname exception list - the same
+"language-specific, open-ended, materially larger machinery" objection this D3's own "Alternatives
+considered" section already raises against a dictionary-based detector for the gluing problem in
+general applies equally here. `named_insureds` is a text field, read at the Director's own
+confirmation step (FR-027) - a spaced rendering of his own named insured's surname is a visible,
+low-stakes cosmetic residual, not a value ever gated, computed from, or compared against.
 
 ## D4. Warnings persist to the cache; the confirm prompt gets a distinct summary
 

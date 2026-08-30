@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -58,25 +58,69 @@ def parse_companies(raw: object) -> list[str]:
 class CurrentPolicy:
     """The confirmed current-policy reference shape (data-model.md). Built
     only by `headless/policydoc.py`'s extraction-and-confirmation path -
-    never parsed from `profile` directly."""
+    never parsed from `profile` directly.
+
+    spec 007-extraction-fidelity, FR-022, FR-023, D5: ten additive fields
+    beyond spec 006's own `insurer`/`premium`/`coverages`, mirroring
+    `headless/policydoc.py`'s own `ExtractionCandidate` extension (minus
+    `warnings`, which a confirmed policy never carries - only the
+    surrounding `PolicyReference` does). Every field defaults to its own
+    empty shape so a v0.0.5/v0.0.6-style construction (a test double
+    included) keeps working unchanged."""
 
     insurer: str
     premium: dict  # {"term_months": str, "amount": str}
     coverages: list  # [{"line", "limit", "deductible": "", "premium": ""}]
+    policy_number: str = ""
+    effective_date: str = ""
+    expiration_date: str = ""
+    policy_level_deductibles: list = field(default_factory=list)  # [{"label", "value"}]
+    asset: dict = field(default_factory=dict)  # {"address": str} or {"vehicle": str, "vin": str}
+    named_insureds: list = field(default_factory=list)
+    excluded_drivers: list = field(default_factory=list)
+    discounts: list = field(default_factory=list)  # [{"label", "value"}]
+    fees: list = field(default_factory=list)  # [{"label", "amount"}]
+    subtotal: str = ""
 
     def to_dict(self) -> dict:
         return {
             "insurer": self.insurer,
             "premium": dict(self.premium),
             "coverages": [dict(c) for c in self.coverages],
+            "policy_number": self.policy_number,
+            "effective_date": self.effective_date,
+            "expiration_date": self.expiration_date,
+            "policy_level_deductibles": [dict(d) for d in self.policy_level_deductibles],
+            "asset": dict(self.asset),
+            "named_insureds": list(self.named_insureds),
+            "excluded_drivers": list(self.excluded_drivers),
+            "discounts": [dict(d) for d in self.discounts],
+            "fees": [dict(f) for f in self.fees],
+            "subtotal": self.subtotal,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "CurrentPolicy":
+        # spec 007-extraction-fidelity, data-model.md's own cache-
+        # compatibility rule: every one of the ten new fields defaults to
+        # its own empty shape when absent from `data` (an older cache file,
+        # or the Director's own hand-typed correction omitting them) -
+        # never a KeyError. Only `insurer`/`premium` remain hard
+        # requirements, unchanged from spec 006.
         return cls(
             insurer=data["insurer"],
             premium=dict(data["premium"]),
             coverages=[dict(c) for c in data.get("coverages", [])],
+            policy_number=data.get("policy_number", ""),
+            effective_date=data.get("effective_date", ""),
+            expiration_date=data.get("expiration_date", ""),
+            policy_level_deductibles=[dict(d) for d in data.get("policy_level_deductibles", [])],
+            asset=dict(data.get("asset", {})),
+            named_insureds=list(data.get("named_insureds", [])),
+            excluded_drivers=list(data.get("excluded_drivers", [])),
+            discounts=[dict(d) for d in data.get("discounts", [])],
+            fees=[dict(f) for f in data.get("fees", [])],
+            subtotal=data.get("subtotal", ""),
         )
 
 

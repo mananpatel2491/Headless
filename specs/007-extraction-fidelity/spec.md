@@ -272,7 +272,12 @@ comparison output is unaffected by their presence.
 - **FR-011**: Spec 006 FR-019's own exemption of `term_months` from the literal-match check continues
   to apply whenever the value equals either the phrase-derived value (FR-010) or the date-derived
   value (FR-008); a `term_months` value matching neither remains subject to the ordinary
-  literal-match check (FR-002).
+  literal-match check (FR-002). **Amended (Opus verifier BLOCK 2, 2026-08-30)**: a `term_months` value
+  matching the schema extension's own verified-dates computation (both `effective_date` and
+  `expiration_date` present, parsed, AND passing the figure gate - FR-025, FR-026, contracts/
+  fidelity.md section 2's own restated one-table precedence) also joins this exemption list, at the
+  highest precedence of the four - a value computed from two verified dates is never itself
+  re-examined by the ordinary literal-match check.
 
 **De-glue pass (new)**
 

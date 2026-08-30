@@ -67,6 +67,73 @@ Record each working session's id here so it can be resumed with `claude --resume
 
 ## Open items
 
+- **Spec 007 (extraction fidelity, v0.0.7, 2026-08-30): implementation delivered, Opus verifier
+  fix batch applied, live-probe verification COMPLETE, Director UAT pending.** An independent
+  audit against three of the Director's own real declarations PDFs probe-proved four defects in
+  v0.0.6's own pipeline: the sanity pass stripped a verbatim composite figure (a split "each
+  person/each accident" limit, a labeled deductible cell, a spaced policy number) because it
+  tokenized the proposed side as one whole blob while the source side was already tokenized
+  per-digit-run; the term-derivation helper mis-paired an unrelated date (a statement/issue date)
+  positioned before the policy-period label with the real period's own start date on two of three
+  real documents, silently overriding a correct local-model claim; the layout-aware converter's
+  own glued table cells (`"Total6month"`-shaped) defeated the "N-month" phrase pattern; and
+  stripped-figure warnings never reached the cache or the confirm prompt in a hard-to-miss way.
+  Also added: ten additive schema fields, five new homeowners coverage-line alias-table keys, and
+  a local-model context-window guard - see `Project_Structure.md`'s own v0.0.7 row for the full
+  first-pass account.
+  **Opus verifier fix batch, same day, applied before commit: 2 BLOCK, 4 IMPORTANT, 4 MINOR.**
+  BLOCK 1 - the first-pass de-glue rule was blanket and, measured against the three real PDFs,
+  corrupted real identifiers (a VIN-shaped run's own survival measured 2 -> 0, a mixed identifier's
+  18 -> 0); corrected to a precise per-run rule (fires only when a maximal alphanumeric run has
+  <= 2 letter<->digit transitions, a <= 3-character digit-side segment, and a >= 3-character
+  letter-side segment at that boundary) - re-verified: 0 VIN-shaped and mixed-identifier
+  discrepancies on two of three documents, and the one apparent discrepancy on the third
+  (vehicles-primary, mixed-identifier metric 5->4) was traced to the probe's own overly broad
+  detection heuristic flagging an ordinary glued label-plus-figure construct structurally
+  identical to the canonical "Total6month" positive case (5 letters + 1 digit + 5 letters, 2
+  transitions) - confirmed via a synthetic reproduction, not a real identifier at all; the
+  narrower, more reliable VIN-shaped-only metric shows 0/0, 0/0, 2/2 (perfect preservation) across
+  all three documents. BLOCK 2 - `effective_date`/`expiration_date` were only date-PARSE-checked,
+  never verified present in the source, letting two fabricated but well-formed dates compute and
+  win a term with zero warnings; both fields now also pass the ordinary figure gate, and the
+  term-precedence rule is restated as ONE table (verified explicit dates > an explicit N-month
+  phrase > window-derived dates > the generator's own claim), with a disagreement warning naming
+  both sources and both term values when a higher tier overrides a lower one that produced a
+  value. IMPORTANT 3 - `research.md`'s own "without weakening the check at all" claim narrowed to
+  "without weakening the per-token exactness of the check" (a composite recombining two
+  real-but-unrelated figures still passes by design; the Director's confirmation is the accepted
+  backstop). IMPORTANT 4 - a "Prior Policy Period" section could span a prior period's own start
+  date to the current period's own end date under the max-minus-min rule; fixed by excluding an
+  occurrence preceded by "prior"/"previous"/"former"/"expiring" and capping every occurrence's own
+  window at the next label occurrence's own start, plus a warning whenever more than two distinct
+  dates survive. IMPORTANT 5 - the context guard was measured against the document text alone
+  (under-counting the prompt template's own overhead) with no response reserve; now measures the
+  FULL prompt against `num_ctx` minus a 1024-token reserve, and `DEFAULT_NUM_CTX` raised 8192 ->
+  16384 after `ollama show qwen3.5:35b` (localhost, read-only, run once) confirmed this machine's
+  own model supports a 262144 context length. IMPORTANT 6 - the "correct" branch's own prompt
+  reworded from a stale "insurer/premium/coverages" list to "the same object printed above," with
+  a new round-trip test proving all 13 `CurrentPolicy` keys survive a correction. MINOR 7/8/9/10
+  resolved (documented residuals, Files Affected correction, no action needed) - see
+  `PATTERNS.md`'s own fix-batch entry and `contracts/fidelity.md` for the full account.
+  Unit suite after the fix batch: 646 passed, 9 skipped (up from the first-pass 629/9 and the
+  574/9 v0.0.6 baseline); `verify_structure.py` green; opt-in browser suite green (8 passed);
+  opt-in `HEADLESS_TEST_OLLAMA=1` integration test passed against the real local model with the
+  corrected `num_ctx` payload.
+  **Orchestrator-run, read-only live probe against the Director's own three real declarations
+  PDFs, RE-RUN after the fix batch, extended with identifier-preservation counts: COMPLETE
+  (2026-08-30), matching SC-005 exactly.** addresses-home: derived term 12 months, 0 verbatim
+  figures stripped, 3/3 deliberately hallucinated figures stripped, 0 VIN-shaped runs (none
+  present) and 3/3 mixed-identifier runs preserved. addresses-rental: derived term 12 months, 0
+  stripped verbatim, 3/3 hallucinated stripped, 0 VIN-shaped (none present) and 15/15
+  mixed-identifier runs preserved. vehicles-primary: derived term 6 months, 0 stripped verbatim,
+  3/3 hallucinated stripped, 2/2 VIN-shaped runs preserved (byte-identical) and 4/5 mixed-identifier
+  runs preserved by the probe's own broad heuristic - traced (see the fix-batch note above) to a
+  false positive on an ordinary glued construct, not an identifier corruption; the real VIN metric
+  on this same document shows perfect 2/2 preservation. No real figure, name, path, or identifier
+  value was written anywhere in this repository by that probe (a throwaway scratchpad script, per
+  NFR-002/NFR-004). **Pending**: the Director-attended re-extraction of his own three real assets
+  into confirmed, cached references using this corrected pipeline - a separate, later session,
+  explicitly out of this delivery's own scope (D9).
 - **Spec 006 (policy extraction v2, v0.0.6, 2026-08-29): implementation delivered, Director UAT
   pending.** The Director's own first real declarations PDF (a three-page homeowners policy)
   exposed two independent gaps in v0.0.5's regex-only extraction: `pypdf`'s own plain-text

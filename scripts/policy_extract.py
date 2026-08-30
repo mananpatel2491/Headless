@@ -188,6 +188,23 @@ def main(argv: list[str] | None = None) -> int:
             confirmed_at=datetime.now(timezone.utc).isoformat(),
             generator=generator_name,
             converter=converter_name,
+            # spec 007-extraction-fidelity, FR-017: the sanity pass's own
+            # warnings, carried through to the cached reference - `candidate`
+            # (the pre-confirmation ExtractionCandidate) is unmutated by
+            # confirm_candidate, so its own `warnings` list is still exactly
+            # what the Director reviewed at the prompt above.
+            #
+            # MINOR 8 (Opus verifier, 2026-08-30) - semantics, not a
+            # behavior change: this is always "warnings AT THE MOMENT OF
+            # REVIEW," never a live description of the cached policy's own
+            # current state. If the Director chose "correct" and pasted a
+            # hand-typed replacement document, `confirmed` may address (or
+            # be unrelated to) exactly what a given warning named - this
+            # field still records what the sanity pass found BEFORE that
+            # correction, the same audit-trail role `source_path`/
+            # `confirmed_at` already play (a fact about the extraction
+            # attempt, not an assertion about the final cached value).
+            warnings=list(candidate.warnings),
         )
         path = write_policy_reference(reference, reports_dir)
         print(f"cached: {path}")

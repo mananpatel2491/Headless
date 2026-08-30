@@ -49,6 +49,40 @@ OLLAMA_GENERATE_PATH = "/api/generate"
 # target to optimize toward.
 DEFAULT_TIMEOUT = 120.0
 
+# spec 007-extraction-fidelity, FR-032, research.md D7: a conservative
+# context-window size common to a locally-hosted mid-size model, added to
+# the request's own `options` object so the actual window in effect is
+# always explicit rather than left to Ollama's own per-model default (which
+# this pipeline has no visibility into and no way to detect a silent
+# truncation against). Callers needing a different value for a differently
+# configured model pass `num_ctx` explicitly - this constant is only the
+# default.
+#
+# IMPORTANT 5 (Opus verifier, 2026-08-30): raised from 8192 to 16384 -
+# `ollama show qwen3.5:35b` (localhost, read-only, run once) reports this
+# machine's own configured model at `context length 262144`, well over the
+# 16k threshold the orchestrator's own decision names. 16384 remains a
+# conservative choice well under the model's own real ceiling, not a claim
+# that the model's full window is safe to fill.
+DEFAULT_NUM_CTX = 16384
+
+# IMPORTANT 5: num_ctx bounds the model's TOTAL context window - the
+# prompt PLUS the response it must still generate inside that same window.
+# Comparing the prompt's own estimated length against the raw num_ctx
+# value alone would let a prompt that leaves zero room for a response
+# still pass this guard unremarked. A fixed reserve is subtracted from
+# num_ctx before the comparison; the response itself is JSON, typically
+# far smaller than 1024 tokens for this contract's own schema, so this
+# reserve is generous, not a tight fit.
+DEFAULT_RESPONSE_RESERVE_TOKENS = 1024
+
+# A simple, deterministic estimate (contracts/fidelity.md section 6's own
+# example) - never a real tokenizer call. Four characters per token is a
+# common rough English-text approximation; this only has to be good enough
+# to flag "this document is probably too long for the configured window,"
+# never an exact count.
+_CHARS_PER_TOKEN_ESTIMATE = 4
+
 Transport = Callable[[str, dict, float], dict]
 
 
@@ -98,6 +132,62 @@ def _coerce_string_leaf(value: object) -> str | None:
     return None
 
 
+def _coerce_string_list(value: object) -> list[str]:
+    """spec 007-extraction-fidelity, FR-023, FR-029: a lenient coercion for
+    `named_insureds`/`excluded_drivers` - these are additive, text-only
+    fields (FR-027), never central to core extraction, so a wrong-shaped
+    value degrades to an empty list rather than failing the whole
+    candidate the way a core field's own mismatch does."""
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        coerced = _coerce_string_leaf(item)
+        if coerced is not None:
+            result.append(coerced)
+    return result
+
+
+def _coerce_label_value_entries(value: object, value_key: str) -> list[dict]:
+    """spec 007-extraction-fidelity, FR-022, FR-023, FR-029: a lenient
+    coercion for `policy_level_deductibles`/`discounts` (`value_key=
+    "value"`) and `fees` (`value_key="amount"`) - each entry needs a `label`
+    to be usable at all; a malformed entry (not an object, missing/
+    wrong-typed `label`) is skipped rather than failing the whole
+    candidate, the same additive-field leniency `_coerce_string_list`
+    documents above."""
+    if not isinstance(value, list):
+        return []
+    result: list[dict] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        label = _coerce_string_leaf(item.get("label"))
+        if label is None:
+            continue
+        coerced_value = _coerce_string_leaf(item.get(value_key, "")) or ""
+        result.append({"label": label, value_key: coerced_value})
+    return result
+
+
+def _coerce_asset(value: object) -> dict:
+    """spec 007-extraction-fidelity, FR-023, FR-027: `asset` is either
+    `{"address": str}` or `{"vehicle": str, "vin": str}` - both a text-only
+    shape (FR-027), never gated as a figure. A wrong-shaped or absent value
+    degrades to `{}`, the same additive-field leniency the other new
+    fields use."""
+    if not isinstance(value, dict):
+        return {}
+    if "address" in value:
+        address = _coerce_string_leaf(value.get("address"))
+        return {"address": address} if address is not None else {}
+    if "vehicle" in value or "vin" in value:
+        vehicle = _coerce_string_leaf(value.get("vehicle", "")) or ""
+        vin = _coerce_string_leaf(value.get("vin", "")) or ""
+        return {"vehicle": vehicle, "vin": vin}
+    return {}
+
+
 def _normalize_candidate_schema(data: object) -> dict | None:
     """The candidate schema `response` must decode to
     (contracts/extraction-v2.md section 1): a missing top-level key,
@@ -111,7 +201,17 @@ def _normalize_candidate_schema(data: object) -> dict | None:
     caller never has to re-check a leaf's own JSON type again. Returns a
     freshly-built, fully-normalized dict on success (never the caller's own
     `data` object, and never partially normalized) or `None` on any
-    mismatch."""
+    mismatch.
+
+    spec 007-extraction-fidelity, FR-029: the ten schema-extension fields
+    (`policy_number` through `subtotal`) are read the same lenient way
+    `coverages`' own optional per-element fields already are - present and
+    well-shaped, they are coerced and passed through; absent or
+    wrong-shaped, they default to their own empty shape. None of them can
+    fail this function's own overall schema-mismatch outcome (only
+    `insurer`/`premium`/`coverages` - spec 006's own three core fields -
+    can do that), since a real declarations page routinely omits several of
+    them and that omission is never itself a sign of a bad response."""
     if not isinstance(data, dict):
         return None
     insurer = _coerce_string_leaf(data.get("insurer"))
@@ -145,7 +245,58 @@ def _normalize_candidate_schema(data: object) -> dict | None:
         "insurer": insurer,
         "premium": {"term_months": term_months, "amount": amount},
         "coverages": coverages,
+        "policy_number": _coerce_string_leaf(data.get("policy_number", "")) or "",
+        "effective_date": _coerce_string_leaf(data.get("effective_date", "")) or "",
+        "expiration_date": _coerce_string_leaf(data.get("expiration_date", "")) or "",
+        "policy_level_deductibles": _coerce_label_value_entries(data.get("policy_level_deductibles"), "value"),
+        "asset": _coerce_asset(data.get("asset")),
+        "named_insureds": _coerce_string_list(data.get("named_insureds")),
+        "excluded_drivers": _coerce_string_list(data.get("excluded_drivers")),
+        "discounts": _coerce_label_value_entries(data.get("discounts"), "value"),
+        "fees": _coerce_label_value_entries(data.get("fees"), "amount"),
+        "subtotal": _coerce_string_leaf(data.get("subtotal", "")) or "",
     }
+
+
+def estimate_token_count(text: str) -> int:
+    """spec 007-extraction-fidelity, FR-032, contracts/fidelity.md section
+    6: a simple, deterministic estimate (character count divided by
+    `_CHARS_PER_TOKEN_ESTIMATE`) - never a real tokenizer call, and never
+    itself a network or model invocation."""
+    return len(text or "") // _CHARS_PER_TOKEN_ESTIMATE
+
+
+def context_window_warning(
+    text: str,
+    num_ctx: int,
+    *,
+    response_reserve_tokens: int = DEFAULT_RESPONSE_RESERVE_TOKENS,
+) -> str | None:
+    """spec 007-extraction-fidelity, FR-032; corrected by IMPORTANT 5 (Opus
+    verifier, 2026-08-30): `None` when `text`'s own estimated token count
+    (`estimate_token_count`) is within `num_ctx - response_reserve_tokens`;
+    otherwise one value-free warning naming only the estimated count and
+    the (reserve-adjusted) threshold - never `text` itself, so a caller can
+    append it directly to a candidate's own `warnings` list without
+    risking document content leaking into it.
+
+    IMPORTANT 5: `text` MUST be the FULL prompt actually sent to the model
+    (the caller's own `_build_extraction_prompt(document.text)`, not the
+    converted document text alone) - the original design measured only the
+    document text, under-counting the request by the prompt template's own
+    fixed instructional overhead. The threshold is `num_ctx -
+    response_reserve_tokens`, never the raw `num_ctx`, since num_ctx bounds
+    the prompt AND the model's own response together, not the prompt
+    alone."""
+    threshold = max(0, num_ctx - response_reserve_tokens)
+    estimated = estimate_token_count(text)
+    if estimated <= threshold:
+        return None
+    return (
+        "converted document is long enough that the local model's context "
+        f"window may truncate it (an estimated {estimated} tokens against "
+        f"a {threshold}-token guard)"
+    )
 
 
 def generate_candidate(
@@ -155,12 +306,18 @@ def generate_candidate(
     prompt: str,
     transport: Transport | None = None,
     timeout: float = DEFAULT_TIMEOUT,
+    num_ctx: int = DEFAULT_NUM_CTX,
 ) -> dict:
     """POSTs the payload contracts/extraction-v2.md section 1 defines
     (`"model"`, `"prompt"`, `"format": "json"`, `"stream": false,
     "think": false`, `"options": {"temperature": 0}`) to
     `<url>/api/generate` via the injectable `transport`, and returns the
     parsed candidate schema dict on success.
+
+    spec 007-extraction-fidelity, FR-032: `options` also carries an
+    explicit `num_ctx` (default `DEFAULT_NUM_CTX`) alongside
+    `"temperature": 0`, so the request always states its own context
+    window rather than leaving it to Ollama's own per-model default.
 
     Raises `LocalModelUnavailable` for every failure classification the
     contract defines - never a partial or best-effort candidate (FR-010
@@ -174,7 +331,7 @@ def generate_candidate(
         "format": "json",
         "stream": False,
         "think": False,
-        "options": {"temperature": 0},
+        "options": {"temperature": 0, "num_ctx": num_ctx},
     }
     full_url = url.rstrip("/") + OLLAMA_GENERATE_PATH
 

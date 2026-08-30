@@ -316,3 +316,60 @@ def test_empty_captures_produces_no_recommendation_and_empty_rule_trail():
     assert result.ranked_quotes == []
     assert result.recommended is None
     assert result.rule_trail == ""
+
+
+# --- spec 007-extraction-fidelity, FR-030, FR-031, D6: alias-table -------
+# extension for homeowners coverage lines (research.md Defect F).
+
+
+def test_normalize_line_maps_standard_collision_to_the_existing_collision_key():
+    assert normalize_line("Standard Collision") == "collision"
+
+
+def test_normalize_line_maps_liability_to_others_and_personal_liability_to_the_same_new_key():
+    assert normalize_line("Liability to Others") == normalize_line("Personal Liability")
+    assert normalize_line("Personal Liability") == "personal_liability"
+
+
+@pytest.mark.parametrize(
+    "phrasing,expected_key",
+    [
+        ("Dwelling", "dwelling"),
+        ("Other Structures", "other_structures"),
+        ("Personal Property", "personal_property"),
+        ("Loss of Use", "loss_of_use"),
+        ("Medical Payments to Others", "medical_payments_to_others"),
+    ],
+)
+def test_normalize_line_recognizes_the_five_new_homeowners_keys(phrasing, expected_key):
+    assert normalize_line(phrasing) == expected_key
+
+
+def test_normalize_line_personal_injury_protection_pip_already_matched_medical_payments_no_table_change():
+    # Regression control (D6's own rationale): this alias already existed
+    # in spec 005's own original table (exact-phrasing entries, not
+    # substring matches) - confirmed here, not merely assumed.
+    assert normalize_line("Personal Injury Protection") == "medical_payments"
+    assert normalize_line("PIP") == "medical_payments"
+
+
+def test_homeowners_coverage_lines_compare_correctly_after_the_alias_extension():
+    # SC-009's own end-to-end proof: a current policy's own "Personal
+    # Liability" line against a competing quote's own "Liability to
+    # Others" phrasing for the identical coverage now normalize to the
+    # SAME key and compare against each other, rather than appearing as two
+    # unrelated lines (research.md Defect F). Matching, non-empty
+    # deductibles on both sides so the deductible sub-comparison itself
+    # does not dominate the combined verdict via the module's own
+    # documented "not_comparable wins over equal" combination rule
+    # (unrelated to this alias change) - see `_combine`.
+    current = _current_policy(
+        coverages=[{"line": "Personal Liability", "limit": "300,000", "deductible": "0", "premium": ""}]
+    )
+    quote = _quote(
+        "homeowners_insurer",
+        coverages=[{"line": "liability to others", "limit": "300,000", "deductible": "0", "premium": ""}],
+    )
+    result = build_comparison(current, {"homeowners_insurer": quote})
+    classifications = result.ranked_quotes[0].line_classifications
+    assert classifications == {"personal_liability": "equal"}

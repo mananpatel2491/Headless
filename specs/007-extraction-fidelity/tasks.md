@@ -17,10 +17,13 @@ implementation task it covers.
 **Organization**: tasks are grouped by user story so each story is independently implementable and
 testable, per this repository's own `tasks-template.md` convention.
 
-**Status**: NOT STARTED. This delivery is spec-authoring only (brief: no code, no commit, no push,
-no browser, no Ollama calls, no branches, `~/.headless/` and every real policy PDF untouched). Every
-task below, T001 onward, is for a future implementation delivery to execute - none is performed by
-this session.
+**Status**: IMPLEMENTED (2026-08-30, builder session, worktree `v0.0.7`). T001 through T030 are
+complete, staged and uncommitted pending Opus verification; the orchestrator-run live probe (T029)
+was executed against the Director's own three real declarations PDFs under explicit orchestrator
+authorization (paths passed on a throwaway scratchpad script's own argv only, never written into
+this repository) - see that task's own note below for the outcome. T031 (Director-only UAT) remains
+genuinely out of this delivery's own scope and is not performed. No commit, no push, no merge, no
+branch, and `~/.headless/` untouched, per this delivery's own brief.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -45,12 +48,12 @@ produces.
 
 **CRITICAL**: no user story task may begin until this phase is complete.
 
-- [ ] T001 [P] `tests/test_policydoc.py`: write tests (to fail first) for the de-glue
+- [x] T001 [P] `tests/test_policydoc.py`: write tests (to fail first) for the de-glue
   transformation - a lowercase-to-uppercase boundary insertion, a letter-to-digit and a
   digit-to-letter boundary insertion, a same-case glued word pair left unresolved (the documented
   residual), and confirmation that no digit's own value, currency symbol, or existing punctuation
   character is ever altered (spec FR-012 through FR-015)
-- [ ] T002 `headless/policydoc.py`: implement the de-glue transformation against T001; wire it into
+- [x] T002 `headless/policydoc.py`: implement the de-glue transformation against T001; wire it into
   the conversion step so `ConvertedDocument.text` always carries the de-glued form before any
   generator, the term-derivation helper, or the sanity pass ever reads it (spec FR-012, FR-016)
   (depends on T001 existing and failing first)
@@ -72,7 +75,7 @@ digit-run suffix or prefix with a real, unrelated source figure) is still stripp
 
 ### Tests for User Story 1 (write first)
 
-- [ ] T003 [P] [US1] `tests/test_policydoc.py`: write tests (to fail first) for the corrected
+- [x] T003 [P] [US1] `tests/test_policydoc.py`: write tests (to fail first) for the corrected
   per-token tokenization - a split, labeled composite figure ("<amount> each person/<amount> each
   accident"-shaped) passes; a spaced-digit-group identifier ("NNN NNN NNN"-shaped) passes; a value
   sharing only a digit-run suffix or prefix with an unrelated source figure still strips (spec 006's
@@ -81,15 +84,15 @@ digit-run suffix or prefix with a real, unrelated source figure) is still stripp
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] `headless/policydoc.py`: rewrite the source/proposed tokenization and the
+- [x] T004 [US1] `headless/policydoc.py`: rewrite the source/proposed tokenization and the
   membership check so both sides strip only `$` and `,` (never whitespace) and a proposed value
   passes only when every one of its own digit-run tokens is a member of the source's own token set
   (spec FR-001, FR-002) (depends on T003 existing and failing first)
-- [ ] T005 [P] [US1] `tests/test_policydoc.py`: write a regression test (to fail first, if not
+- [x] T005 [P] [US1] `tests/test_policydoc.py`: write a regression test (to fail first, if not
   already covered by T003) confirming a clean regex-derived candidate is never stripped by the
   corrected gate - unchanged from spec 006's own guarantee that a regex match is by construction a
   substring of its own source
-- [ ] T006 [US1] Run `pytest -q -k "sanity_pass or figure_present"` and confirm every test in T003
+- [x] T006 [US1] Run `pytest -q -k "sanity_pass or figure_present"` and confirm every test in T003
   and T005 passes; no file beyond T004 is expected to change in this phase
 
 **Checkpoint**: User Story 1 is independently functional - the corrected gate no longer destroys a
@@ -110,22 +113,22 @@ different term; assert the phrase wins.
 
 ### Tests for User Story 2 (write first)
 
-- [ ] T007 [P] [US2] `tests/test_policydoc.py`: write tests (to fail first) for scanning every
+- [x] T007 [P] [US2] `tests/test_policydoc.py`: write tests (to fail first) for scanning every
   label occurrence, windowing after each occurrence only (~400 characters, never before), and
   computing the term from the maximum and minimum date collected across every window - including a
   fixture reproducing an unrelated date positioned before the label (spec FR-006 through FR-009,
   SC-003)
-- [ ] T008 [P] [US2] `tests/test_policydoc.py`: write tests (to fail first) for phrase preference -
+- [x] T008 [P] [US2] `tests/test_policydoc.py`: write tests (to fail first) for phrase preference -
   a de-glued "N-month"/"N month" phrase takes precedence over the date-derived value, for both the
   local-model generator and the regex-based generator (spec FR-010, FR-011, SC-004)
 
 ### Implementation for User Story 2
 
-- [ ] T009 [US2] `headless/policydoc.py`: rewrite the label-occurrence scan and the window to
+- [x] T009 [US2] `headless/policydoc.py`: rewrite the label-occurrence scan and the window to
   search after each occurrence only; rewrite the date-collection step to gather every parseable date
   across every window and compute the span from the maximum and minimum date collected (spec
   FR-006 through FR-009) (depends on T007 existing and failing first)
-- [ ] T010 [US2] `headless/policydoc.py`: wire phrase preference into both generators' own term
+- [x] T010 [US2] `headless/policydoc.py`: wire phrase preference into both generators' own term
   resolution, checked ahead of the corrected date-derivation helper from T009 (spec FR-010, FR-011)
   (depends on T008 existing and failing first, and on T009)
 
@@ -148,23 +151,23 @@ this feature existed still reads back with an empty warnings list.
 
 ### Tests for User Story 3 (write first)
 
-- [ ] T011 [P] [US3] `tests/test_policydoc.py`: write tests (to fail first) for the confirmed
+- [x] T011 [P] [US3] `tests/test_policydoc.py`: write tests (to fail first) for the confirmed
   reference's own `warnings` field round-tripping through write/read, defaulting to an empty list
   when absent from an older cache file (spec FR-017, FR-018, SC-006)
-- [ ] T012 [P] [US3] `tests/test_policydoc.py`: write tests (to fail first) for the confirmation
+- [x] T012 [P] [US3] `tests/test_policydoc.py`: write tests (to fail first) for the confirmation
   prompt's own new warnings section - printed before the existing JSON block and question when the
   candidate carries at least one warning, entirely absent when it carries zero (spec FR-019 through
   FR-021, SC-007)
 
 ### Implementation for User Story 3
 
-- [ ] T013 [US3] `headless/policydoc.py`: extend `PolicyReference` with `warnings`; update the
+- [x] T013 [US3] `headless/policydoc.py`: extend `PolicyReference` with `warnings`; update the
   write/read functions (and the provenance reader) to carry it through the existing round trip
   (spec FR-017, FR-018) (depends on T011 existing and failing first)
-- [ ] T014 [US3] `headless/policydoc.py`: extend `confirm_candidate` to print the warnings section
+- [x] T014 [US3] `headless/policydoc.py`: extend `confirm_candidate` to print the warnings section
   ahead of the existing JSON block and question (spec FR-019 through FR-021) (depends on T012
   existing and failing first)
-- [ ] T015 [US3] `scripts/policy_extract.py`: pass the confirmed candidate's own warnings through
+- [x] T015 [US3] `scripts/policy_extract.py`: pass the confirmed candidate's own warnings through
   to the constructed `PolicyReference` (depends on T013)
 
 **Checkpoint**: User Stories 1 through 3 all work independently - a correct, verifiably-stripped-free
@@ -187,15 +190,15 @@ still passes unchanged.
 
 ### Tests for User Story 4 (write first)
 
-- [ ] T016 [P] [US4] `tests/test_policydoc.py`: write tests (to fail first) for the ten new
+- [x] T016 [P] [US4] `tests/test_policydoc.py`: write tests (to fail first) for the ten new
   fields - a policy-level deductible, a policy number, an effective/expiration date pair that
   computes `term_months`, an asset (address, or vehicle plus VIN), `named_insureds`/
   `excluded_drivers`, discounts, fees, and subtotal - each new figure-shaped field subject to the
   corrected gate, each date subject to a date-parse check (spec FR-022 through FR-026, SC-008)
-- [ ] T017 [P] [US4] `tests/test_policydoc.py`: write a test (to fail first) confirming every new
+- [x] T017 [P] [US4] `tests/test_policydoc.py`: write a test (to fail first) confirming every new
   text field (`asset`, `named_insureds`, `excluded_drivers`, every entry `label`) is exempt from the
   sanity pass, mirroring spec 006's own insurer-name exemption test (spec FR-027)
-- [ ] T018 [P] [US4] `tests/test_compare.py`: write tests (to fail first) for the alias-table
+- [x] T018 [P] [US4] `tests/test_compare.py`: write tests (to fail first) for the alias-table
   extension - a "Standard Collision"-shaped name into the existing `collision` key, a "Liability to
   Others"-shaped name into a new `personal_liability` key alongside a "Personal Liability"-shaped
   canonical phrasing, and the five other new homeowners keys - plus a regression test confirming
@@ -204,17 +207,17 @@ still passes unchanged.
 
 ### Implementation for User Story 4
 
-- [ ] T019 [US4] `headless/policydoc.py`: extend `ExtractionCandidate` and the local-model
+- [x] T019 [US4] `headless/policydoc.py`: extend `ExtractionCandidate` and the local-model
   extraction prompt with the ten new fields (spec FR-022, FR-023, FR-029); extend the sanity pass to
   gate the new figure-shaped fields (spec FR-025) and date-parse-check `effective_date`/
   `expiration_date` (spec FR-026); compute `term_months` from the two dates when both parse (spec
   FR-024) (depends on T016, T017 existing and failing first)
-- [ ] T020 [US4] `headless/capture.py`: extend `CurrentPolicy`'s `to_dict`/`from_dict` with the same
+- [x] T020 [US4] `headless/capture.py`: extend `CurrentPolicy`'s `to_dict`/`from_dict` with the same
   ten fields, defaulting each to its own empty shape when absent from a corrected JSON document
   (spec FR-023) (depends on T019)
-- [ ] T021 [US4] `headless/compare.py`: extend `_ALIASES` per T018 (spec FR-030, FR-031) (depends
+- [x] T021 [US4] `headless/compare.py`: extend `_ALIASES` per T018 (spec FR-030, FR-031) (depends
   on T018 existing and failing first)
-- [ ] T022 [P] [US4] Run the full existing `tests/test_compare.py` suite and confirm every
+- [x] T022 [P] [US4] Run the full existing `tests/test_compare.py` suite and confirm every
   pre-existing test still passes unchanged after T021 (spec FR-028, SC-009) - re-run this exact
   suite as part of this phase's own verification, not merely at final commit-gate time, since it is
   the one existing suite this feature's own alias-table change most directly risks breaking
@@ -231,11 +234,11 @@ except through the alias-table extension.
 research.md D7 identifies. Not tied to any single numbered user story in spec.md - a standalone P2
 hardening item alongside User Story 4.
 
-- [ ] T023 [P] `tests/test_localllm.py`: write tests (to fail first) for the `num_ctx` payload field
+- [x] T023 [P] `tests/test_localllm.py`: write tests (to fail first) for the `num_ctx` payload field
   and the length-estimate guard - a converted document short enough to pass unremarked, and one long
   enough to trigger the value-free warning naming only the estimated count and the threshold (spec
   FR-032)
-- [ ] T024 `headless/localllm.py`: add `num_ctx` to the request's own `options` object;
+- [x] T024 `headless/localllm.py`: add `num_ctx` to the request's own `options` object;
   `headless/policydoc.py`: add the length-estimate check against the de-glued text before the
   request is built (spec FR-032) (depends on T023 existing and failing first)
 
@@ -248,23 +251,29 @@ enough to risk silent truncation is flagged, never silently mishandled.
 
 **Purpose**: docs of record, the orchestrator-run live-probe verification, and the commit gate.
 
-- [ ] T025 [P] `PATTERNS.md`: add one new entry, "Extraction fidelity: the corrected figure gate,
+- [x] T025 [P] `PATTERNS.md`: add one new entry, "Extraction fidelity: the corrected figure gate,
   term derivation, de-glue pass, visible warnings, and schema extension (v0.0.7, spec
   007-extraction-fidelity)," documenting each corrected mechanism and the schema/alias extensions -
   following this file's own established entry style exactly
-- [ ] T026 [P] `Project_Structure.md`: update the descriptions for `headless/policydoc.py`,
+- [x] T026 [P] `Project_Structure.md`: update the descriptions for `headless/policydoc.py`,
   `headless/compare.py`, `headless/localllm.py`, and `headless/capture.py`; append a new Changelog
   row for v0.0.7 following this file's own established row format exactly
-- [ ] T027 [P] `scripts/README.md`: update `policy_extract.py`'s own table row to mention the
+- [x] T027 [P] `scripts/README.md`: update `policy_extract.py`'s own table row to mention the
   corrected pipeline and the new confirm-prompt warnings section
-- [ ] T028 [P] `MEMORY.md`: add a dated entry under "Open items" recording this feature's own
+- [x] T028 [P] `MEMORY.md`: add a dated entry under "Open items" recording this feature's own
   delivery and the pending live-probe verification (T029) and Director UAT (T031)
-- [ ] T029 Run the read-only reviewer probe (quickstart.md Scenarios 1 and 2) against the
-  Director's own three real declarations PDFs - **orchestrator-run, implementation-phase task,
-  pending**; this delivery's own brief is spec-authoring only and does not perform this task; expects
-  derived terms of twelve, six, and twelve months respectively, and zero stripped-verbatim warnings
-  across all three documents (spec SC-005)
-- [ ] T030 Run the full commit gate: `python -m pytest -q`, `python scripts/verify_structure.py`,
+- [x] T029 Run the read-only reviewer probe (quickstart.md Scenarios 1 and 2) against the
+  Director's own three real declarations PDFs - **orchestrator-run, orchestrator-authorized within
+  this implementation session (2026-08-30), COMPLETE**; a throwaway scratchpad script (never
+  committed to this repository) converted each PDF with the real `pymupdf4llm` path, ran the
+  corrected `derive_term_from_dates`, harvested each document's own coverage-table figures
+  verbatim and fed them back through `apply_sanity_pass` alongside three deliberately hallucinated
+  figures. Result, matching SC-005 exactly on all three: derived terms twelve, six, and twelve
+  months respectively; zero verbatim source figures stripped as hallucinated on any of the three;
+  every hallucinated figure correctly stripped (the anti-hallucination invariant held throughout).
+  No real figure value left the scratchpad script; the paths themselves were never written into
+  this repository. See `MEMORY.md`'s own dated entry.
+- [x] T030 Run the full commit gate: `python -m pytest -q`, `python scripts/verify_structure.py`,
   `python scripts/scan_secrets.py --staged` - all three green, with zero real network calls, zero
   real local-model invocations, and zero real PDF file reads anywhere in the default suite (spec
   NFR-001, NFR-003, SC-010)

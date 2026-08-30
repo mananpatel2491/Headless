@@ -220,11 +220,17 @@ def main(argv: list[str] | None = None) -> int:
     current_policy = policydoc.read_policy_reference(_TARGET_ASSET_KEY, reports_dir)
     provenance = policydoc.read_policy_reference_provenance(_TARGET_ASSET_KEY, reports_dir)
     if provenance:
+        # spec 007-extraction-fidelity, FR-017/FR-018: the tuple gained a
+        # 5th element, warnings - not surfaced in the rendered report
+        # (spec.md's own Out of Scope: no report.py rendering change beyond
+        # what keeping the provenance footer consistent strictly requires),
+        # so it is unpacked here and simply left unused.
         (
             current_policy_source,
             current_policy_confirmed_at,
             current_policy_generator,
             current_policy_converter,
+            _current_policy_warnings,
         ) = provenance
     else:
         current_policy_source = current_policy_confirmed_at = None
