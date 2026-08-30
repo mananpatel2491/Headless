@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Headless recorder fixture</title>
+</head>
+<body>
+<h1>Headless recorder fixture</h1>
+<form id="record-form">
+  <label for="full_name">Full name</label>
+  <input type="text" id="full_name" name="full_name">
+
+  <label for="street">Street</label>
+  <input type="text" id="street" name="street">
+
+  <label for="plan_tier">Plan tier</label>
+  <select id="plan_tier" name="plan_tier">
+    <option value="basic">Basic</option>
+    <option value="plus">Plus</option>
+  </select>
+
+  <label for="paperless">Paperless</label>
+  <input type="checkbox" id="paperless" name="paperless">
+
+  <label for="account_password">Password</label>
+  <input type="password" id="account_password" name="account_password">
+
+  <label for="login_otp">One-time code</label>
+  <input type="text" id="login_otp" name="login_otp" autocomplete="one-time-code">
+
+  <button type="button" id="continue" data-testid="wizard-continue">Continue</button>
+  <button type="button" id="pay">Pay now</button>
+</form>
+</body>
+</html>

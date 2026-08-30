@@ -16,7 +16,12 @@ not an errand: it composes `ProgressiveQuoteErrand`'s own `.run()` call (and any
 via `headless.insurers.WALK_REGISTRY`) rather than owning a site, a `plan()`/`walk()`, or a
 `HANDOFF` of its own - see `scripts/README.md`'s own "Orchestrators" section for its row.
 `scripts/policy_extract.py` is a maintenance-adjacent script, not an errand either (no browser, no
-site) - see `scripts/README.md`'s Maintenance table.
+site) - see `scripts/README.md`'s Maintenance table. `scripts/record.py` (spec
+007-record-scaffold) opens a browser window but is a **scaffolding tool**, not an errand: the
+Director's own hands do every site interaction while it observes, it has no site, `plan()`/`walk()`,
+or `HANDOFF` of its own, and its output is a draft errand under the gitignored
+`previews/recordings/`. A promoted draft gets its own row in this table when it lands in
+`scripts/` (same commit), exactly like a hand-written errand.
 
 ## Maintenance Rules
 
