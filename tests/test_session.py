@@ -1154,3 +1154,60 @@ def test_capture_never_calls_click():
     session.capture({"a": "#a"})
 
     assert locator.click_calls == 0
+
+
+# --- v0.0.7.1: click-navigation race hardening ---------------------------
+
+
+def test_click_settles_after_navigation_best_effort():
+    """After a successful click, wait_for_load_state is called once; its
+    failure never surfaces (a click that navigates nowhere must not fail)."""
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    locator = _StubLocator()
+    page = _StubPageForClickCapture({"#go": locator})
+    settle_calls = []
+    page.wait_for_load_state = lambda *a, **k: settle_calls.append(a)
+    session.page = page
+
+    session.click("#go", "start")
+
+    assert locator.click_calls == 1
+    assert len(settle_calls) == 1
+
+    def _boom(*a, **k):
+        raise RuntimeError("no navigation happened")
+
+    page.wait_for_load_state = _boom
+    session.click("#go", "start")  # must not raise
+    assert locator.click_calls == 2
+
+
+def test_click_settle_not_attempted_when_click_itself_failed():
+    session = _bare_session_for_click_capture(Mode.APPLY)
+    locator = _StubLocator(click_exc=RuntimeError("boom"))
+    page = _StubPageForClickCapture({"#go": locator})
+    settle_calls = []
+    page.wait_for_load_state = lambda *a, **k: settle_calls.append(a)
+    session.page = page
+
+    with pytest.raises(ClickFailed):
+        session.click("#go", "start")
+
+    assert settle_calls == []
+
+
+def test_screenshot_returns_none_when_capture_races_navigation(capsys):
+    session = _bare_session()
+
+    def _raise(*a, **k):
+        raise PlaywrightError("Execution context was destroyed")
+
+    session.page.screenshot = _raise
+
+    result = session.screenshot()
+
+    out = capsys.readouterr().out
+    assert result is None
+    assert "screenshot skipped, the page navigated during capture" in out
+    # the mask was injected before the race; its removal is best-effort
+    assert session.page.add_style_tag_calls == [_SCREENSHOT_MASK_CSS]
