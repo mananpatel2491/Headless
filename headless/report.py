@@ -218,6 +218,8 @@ def _render_footer(
     comparison: ComparisonResult,
     current_policy_source: str | None,
     current_policy_confirmed_at: str | None,
+    current_policy_generator: str | None = None,
+    current_policy_converter: str | None = None,
 ) -> str:
     lines = []
     for rq in comparison.ranked_quotes:
@@ -227,9 +229,21 @@ def _render_footer(
         lines.append(f"<li>{_escape(rq.insurer)}: {', '.join(parts)}</li>")
     current_policy_line = ""
     if current_policy_source and current_policy_confirmed_at:
+        # spec 006-policy-extraction-v2, FR-024: surface which generator and
+        # which converter produced the confirmed reference, alongside the
+        # source/confirmed-at fields v0.0.5 already surfaced here - only
+        # when both are present, so a cache file written before this
+        # feature existed (data-model.md's own additive-only invariant)
+        # degrades to exactly v0.0.5's own footer shape.
+        provenance_suffix = ""
+        if current_policy_generator and current_policy_converter:
+            provenance_suffix = (
+                f", generator {_escape(current_policy_generator)}, "
+                f"converter {_escape(current_policy_converter)}"
+            )
         current_policy_line = (
             f"<p>Current-policy reference: {_escape(current_policy_source)}, "
-            f"confirmed {_escape(current_policy_confirmed_at)}.</p>"
+            f"confirmed {_escape(current_policy_confirmed_at)}{provenance_suffix}.</p>"
         )
     return (
         "<footer><h2>Provenance</h2>"
@@ -252,6 +266,8 @@ def render_report(
     current_policy: CurrentPolicy | None = None,
     current_policy_source: str | None = None,
     current_policy_confirmed_at: str | None = None,
+    current_policy_generator: str | None = None,
+    current_policy_converter: str | None = None,
 ) -> str:
     """Render one self-contained HTML report (contracts section 5). Every
     argument is already fully resolved, in-memory data - this function
@@ -271,7 +287,13 @@ def render_report(
         + _render_table(comparison, current_policy)
         + _render_unmapped(unmapped)
         + _render_failed(failed)
-        + _render_footer(comparison, current_policy_source, current_policy_confirmed_at)
+        + _render_footer(
+            comparison,
+            current_policy_source,
+            current_policy_confirmed_at,
+            current_policy_generator,
+            current_policy_converter,
+        )
     )
     return (
         "<!doctype html>\n"

@@ -55,6 +55,16 @@ Sync Impact Report
   candidate) - each already existed as a designed exception before this bump; this is the
   first time the constitution names all three together. No gate, mode, or secrets-backend
   behavior changed. Templates unchanged.
+- 1.3.1 -> 1.4.0 (MINOR: an existing hard rule is redefined, not merely extended - the first
+  time this constitution has recast a rule rather than only adding to or clarifying one): policy
+  extraction v2 (specs/006-policy-extraction-v2). The flat "never an LLM" clause inside the
+  Secrets Hard Rules bullet is replaced: extraction may attempt a local-only model (never a
+  cloud one, structurally refused by a value-free ConfigError on any non-localhost endpoint), but
+  no candidate - regardless of which generator produced it - ever reaches the reports/policy/
+  cache or the comparison engine without first passing a new mechanical sanity pass (every
+  proposed figure must appear literally in the converted source document, or it is stripped) and
+  the pre-existing, unchanged, mandatory Director confirmation step. The older, separate rule -
+  nothing an LLM derives is ever typed into a site - is untouched. Templates unchanged.
 -->
 
 # Headless Constitution
@@ -124,8 +134,14 @@ stay free and reproducible.
   quote comparison feature lives inside `profile.feature_configs.insurance.companies`
   (specs/005-insurance-quote-comparison), not a separate vault item; there is no
   `current_policy` field anywhere in `profile` - each insured asset's own `policy_doc` PDF is
-  extracted (deterministic heuristics, `pypdf`, never an LLM) and Director-confirmed instead,
-  cached under `reports/` (both `captures/` and the rendered report), which inherits
+  turned into a confirmed reference via a layout-aware conversion and a local-only model (never
+  a cloud one - a value-free `ConfigError` refuses any non-localhost `HEADLESS_OLLAMA_URL`
+  before any conversion or network call, specs/006-policy-extraction-v2), falling back
+  automatically to the original regex heuristics whenever the local model is unavailable; no
+  candidate from either generator reaches the cache without first passing a mechanical check
+  that strips any figure absent from the converted document, plus mandatory Director
+  confirmation, unchanged, cached under `reports/` (both `captures/` and the rendered report),
+  which inherits
   `previews/`'s own vault-grade classification. Three documented, narrowly-scoped exceptions
   to the never-print-a-value convention exist, each a single interactive Director-invoked
   terminal command: `vault.py get`, `vault.py verify`, and `scripts/policy_extract.py`'s own
@@ -172,4 +188,4 @@ never introduces rules of its own. Every spec, plan, and task list produced by `
 MUST be checked for compliance against the principles and hard rules above, and any
 complexity beyond them MUST be justified in the plan's Complexity Tracking table.
 
-**Version**: 1.3.1 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-26
+**Version**: 1.4.0 | **Ratified**: 2026-08-24 | **Last Amended**: 2026-08-29

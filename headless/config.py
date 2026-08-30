@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -33,6 +34,8 @@ class Config:
     preview_dir: Path
     screenshots: bool = True
     show: bool = False
+    ollama_model: str = "qwen3.5:35b"
+    ollama_url: str = "http://localhost:11434"
 
 
 def _repo_root() -> Path:
@@ -139,6 +142,25 @@ def load_config(overrides: dict[str, object] | None = None) -> Config:
     else:
         show = _env_flag(os.environ.get("HEADLESS_SHOW"), False)
 
+    # Local-model extraction seam (spec 006-policy-extraction-v2, D3). Any
+    # non-empty model name is accepted - this codebase does not maintain its
+    # own list of valid model names (contracts/extraction-v2.md section 6).
+    ollama_model = pick("ollama_model", "HEADLESS_OLLAMA_MODEL", "qwen3.5:35b")
+
+    # FR-007's own structural refusal: the policy document's text, and its
+    # converted content, MUST NEVER be sent to a non-local endpoint. Checked
+    # here, at load_config() time - the same "validated once, at load time"
+    # precedent age_file's own ConfigError already established - so every
+    # caller downstream (headless/localllm.py) can trust config.ollama_url
+    # without re-checking it itself.
+    ollama_url = pick("ollama_url", "HEADLESS_OLLAMA_URL", "http://localhost:11434")
+    ollama_host = urlparse(ollama_url).hostname
+    if ollama_host not in ("localhost", "127.0.0.1"):
+        raise ConfigError(
+            f"HEADLESS_OLLAMA_URL={ollama_url!r} must resolve to localhost or 127.0.0.1 - "
+            "the policy document's text must never be sent to a non-local endpoint"
+        )
+
     return Config(
         profile_dir=profile_dir,
         headed=headed,
@@ -150,4 +172,6 @@ def load_config(overrides: dict[str, object] | None = None) -> Config:
         preview_dir=preview_dir,
         screenshots=screenshots,
         show=show,
+        ollama_model=ollama_model,
+        ollama_url=ollama_url,
     )

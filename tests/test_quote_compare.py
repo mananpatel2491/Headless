@@ -15,7 +15,8 @@ import json
 import pytest
 
 import scripts.quote_compare as quote_compare
-from headless.capture import QuoteCapture, write_capture
+from headless.capture import CurrentPolicy, QuoteCapture, write_capture
+from headless.policydoc import PolicyReference, write_policy_reference
 from headless.errand import Errand
 
 
@@ -256,6 +257,47 @@ def test_a_prior_capture_is_used_when_this_runs_own_attempt_fails(monkeypatch, t
     content = report_files[0].read_text(encoding="utf-8")
     assert "2026-08-20T08:00:00+00:00" in content
     assert "no successful capture yet" not in content
+
+
+# --- IMPORTANT 5 (Opus verifier, 2026-08-29): the provenance 4-tuple wiring
+# through this orchestrator (lines ~222-231, `read_policy_reference_
+# provenance`'s own 2-tuple -> 4-tuple change, spec 006-policy-extraction-v2
+# FR-023/FR-024) had zero test coverage in this file - verified correct by
+# manual live testing during that delivery, but unguarded against a future
+# regression (the same "004 regression class" a frozen-dataclass field
+# addition already burned this repository once, MEMORY.md).
+
+
+def test_confirmed_policy_reference_provenance_reaches_the_report_footer(monkeypatch, tmp_path):
+    progressive_cls = _make_fixture_errand("progressive", return_code=0)
+    monkeypatch.setattr(quote_compare, "WALK_REGISTRY", {"progressive": progressive_cls})
+    _wire_vault(monkeypatch, _profile_doc(["progressive"]))
+
+    reports_dir = tmp_path / "reports"
+    write_policy_reference(
+        PolicyReference(
+            policy=CurrentPolicy(
+                insurer="Sample Assurance Mutual",
+                premium={"term_months": "12", "amount": "1200.00"},
+                coverages=[{"line": "medical_payments", "limit": "5,000", "deductible": "", "premium": ""}],
+            ),
+            asset_key="vehicles-primary",
+            source_path="/tmp/example-declarations.pdf",
+            confirmed_at="2026-08-29T00:00:00+00:00",
+            generator="local-llm:qwen3.5:35b",
+            converter="pymupdf4llm",
+        ),
+        reports_dir,
+    )
+
+    exit_code = quote_compare.main(["--apply"])
+
+    assert exit_code == 0
+    report_files = list(reports_dir.glob("quote-comparison-*.html"))
+    assert len(report_files) == 1
+    content = report_files[0].read_text(encoding="utf-8")
+    assert "local-llm:qwen3.5:35b" in content
+    assert "pymupdf4llm" in content
 
 
 # --- T039: flag forwarding -----------------------------------------------

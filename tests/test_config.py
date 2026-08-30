@@ -24,6 +24,8 @@ ALL_HEADLESS_VARS = [
     "HEADLESS_PREVIEW_DIR",
     "HEADLESS_SCREENSHOTS",
     "HEADLESS_SHOW",
+    "HEADLESS_OLLAMA_MODEL",
+    "HEADLESS_OLLAMA_URL",
 ]
 
 
@@ -205,3 +207,52 @@ def test_config_is_frozen():
     config = load_config()
     with pytest.raises(Exception):
         config.headed = False
+
+
+# --- ollama_model / ollama_url (spec 006-policy-extraction-v2, FR-006, FR-007) ----
+
+
+def test_ollama_defaults():
+    config = load_config()
+    assert config.ollama_model == "qwen3.5:35b"
+    assert config.ollama_url == "http://localhost:11434"
+
+
+def test_ollama_model_env_override(monkeypatch):
+    monkeypatch.setenv("HEADLESS_OLLAMA_MODEL", "llama3.2:3b")
+    config = load_config()
+    assert config.ollama_model == "llama3.2:3b"
+
+
+def test_ollama_url_env_override_localhost_is_accepted(monkeypatch):
+    monkeypatch.setenv("HEADLESS_OLLAMA_URL", "http://localhost:9999")
+    config = load_config()
+    assert config.ollama_url == "http://localhost:9999"
+
+
+def test_ollama_url_env_override_127_0_0_1_is_accepted(monkeypatch):
+    monkeypatch.setenv("HEADLESS_OLLAMA_URL", "http://127.0.0.1:11434")
+    config = load_config()
+    assert config.ollama_url == "http://127.0.0.1:11434"
+
+
+def test_ollama_url_non_local_host_raises_configerror(monkeypatch):
+    # SC-003: a non-local HEADLESS_OLLAMA_URL refuses with a value-free
+    # ConfigError before any conversion, extraction, or network call.
+    monkeypatch.setenv("HEADLESS_OLLAMA_URL", "https://example.com")
+    with pytest.raises(ConfigError) as exc_info:
+        load_config()
+    assert "HEADLESS_OLLAMA_URL" in str(exc_info.value)
+    assert "localhost" in str(exc_info.value)
+
+
+def test_ollama_url_non_local_host_via_override_raises_configerror():
+    with pytest.raises(ConfigError):
+        load_config(overrides={"ollama_url": "http://evil.example.com:11434"})
+
+
+def test_ollama_url_missing_scheme_host_raises_configerror(monkeypatch):
+    # A malformed URL with no parseable host must refuse, not silently pass.
+    monkeypatch.setenv("HEADLESS_OLLAMA_URL", "not-a-url")
+    with pytest.raises(ConfigError):
+        load_config()

@@ -1,0 +1,18 @@
+Sample Assurance Mutual Insurance Company
+Homeowners Declarations Page (synthetic test fixture - no real policy data)
+
+Named Insured: Test Testerson
+Property Address: 1 Example Lane, Example City, XX 00000
+
+12/01/2026To:12/01/2025From:Policy Period:
+
+Coverages:
+Dwelling                         $300,000
+Other Structures                 $30,000
+Personal Property                $150,000
+Loss of Use                      $60,000
+Medical Payments                 $5,000
+
+All Perils Deductible: $1,000
+
+Total Policy Premium: $1,200.00

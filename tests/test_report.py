@@ -171,6 +171,46 @@ def test_captured_text_is_escaped_before_reaching_the_output():
 # --- write_report -------------------------------------------------------
 
 
+# --- provenance footer: generator/converter (spec 006-policy-extraction-v2, FR-024) ---
+
+
+def test_footer_renders_generator_and_converter_when_present():
+    comparison = build_comparison(_current_policy(), {"progressive": _quote("progressive")})
+    html = render_report(
+        comparison,
+        [],
+        [],
+        current_policy=_current_policy(),
+        current_policy_source="/tmp/example-policy.pdf",
+        current_policy_confirmed_at="2026-08-29T00:00:00+00:00",
+        current_policy_generator="local-llm:qwen3.5:35b",
+        current_policy_converter="pymupdf4llm",
+    )
+    assert "local-llm:qwen3.5:35b" in html
+    assert "pymupdf4llm" in html
+
+
+def test_footer_degrades_to_the_v005_shape_when_generator_and_converter_are_absent():
+    # A cache file written before spec 006 existed has no
+    # generator/converter fields at all (data-model.md's own additive-only
+    # invariant) - the footer must render exactly as v0.0.5 already did,
+    # never a broken or partially-labelled line.
+    comparison = build_comparison(_current_policy(), {"progressive": _quote("progressive")})
+    html = render_report(
+        comparison,
+        [],
+        [],
+        current_policy=_current_policy(),
+        current_policy_source="/tmp/example-policy.pdf",
+        current_policy_confirmed_at="2026-08-29T00:00:00+00:00",
+    )
+    footer_line = [line for line in html.splitlines() if "Current-policy reference" in line][0]
+    assert "generator" not in footer_line
+    assert "converter" not in footer_line
+    assert "/tmp/example-policy.pdf" in footer_line
+    assert "2026-08-29T00:00:00+00:00" in footer_line
+
+
 def test_write_report_writes_dated_file_and_overwrites_same_date(tmp_path):
     html_first = "<html>first</html>"
     path_first = write_report(html_first, tmp_path)

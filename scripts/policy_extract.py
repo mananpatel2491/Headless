@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """policy_extract: turn an insured asset's policy_doc PDF into a confirmed
 current-policy reference (spec 005-insurance-quote-comparison, User Story 3,
-research.md D15, contracts/walk-capture-report.md section 9).
+research.md D15, contracts/walk-capture-report.md section 9; extraction
+pipeline replaced by spec 006-policy-extraction-v2).
 
 Background: `current_policy` is not hand-typed into the `profile` vault
 item; each insured asset (an `addresses[]`/`vehicles[]` element) carries its
 own `policy_doc` field, a filesystem path to the PDF of the policy currently
-covering it. This script extracts a best-effort candidate from that PDF via
-`headless/policydoc.py` (`pypdf`, deterministic heuristics only, no LLM call
-anywhere), prints it to the Director's own terminal for review, and caches
-only a confirmed (accepted-or-corrected) result under
-`reports/policy/<asset-key>.json`.
+covering it. This script converts that PDF with layout awareness, proposes a
+candidate via a local-only Ollama model (falling back automatically to the
+v0.0.5 regex-based heuristics whenever the local model is unavailable,
+unreachable, or `--no-llm` was passed), runs a mechanical sanity pass that
+strips any figure absent from the converted source text
+(`headless/policydoc.py`'s `extract_candidate_v2`), prints the result to the
+Director's own terminal for review, and caches only a confirmed
+(accepted-or-corrected) result under `reports/policy/<asset-key>.json`. No
+call of any kind ever reaches a non-local endpoint (`headless/config.py`'s
+own localhost-only `ConfigError`).
 
 Site: none. This maintenance-adjacent script never opens a browser window
 (the same category `scripts/vault.py` and `scripts/scan_secrets.py`
@@ -29,6 +35,8 @@ Handoff: none; this is not a browser errand.
 Usage:
     python scripts/policy_extract.py                    # every eligible asset
     python scripts/policy_extract.py vehicles.primary    # one asset only
+    python scripts/policy_extract.py --no-llm            # regex heuristics only,
+                                                          # never attempts a local model
 
 Exit codes: 0 on completion (regardless of how many assets were skipped,
 declined, or extracted with zero lines - none of those are failures); 1 a
@@ -58,7 +66,7 @@ from headless.policydoc import (
     PolicyReference,
     confirm_candidate,
     derive_asset_key,
-    extract_candidate,
+    extract_candidate_v2,
     is_excluded,
     write_policy_reference,
 )
@@ -114,6 +122,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Restrict to one asset, e.g. vehicles.primary. Default: every eligible asset.",
     )
+    parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip the local-model attempt entirely; every candidate comes from the "
+        "regex-based generator (spec 006-policy-extraction-v2, FR-014).",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -149,14 +163,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     reports_dir = reports_dir_for(config)
+    use_llm = not args.no_llm
     for array_name, element in assets:
         asset_key = derive_asset_key(array_name, element.get("type", ""))
         pdf_path = Path(element["policy_doc"])
         print(f"--- {asset_key} ({pdf_path}) ---")
-        candidate = extract_candidate(pdf_path)
-        if candidate is None:
+        result = extract_candidate_v2(pdf_path, config=config, use_llm=use_llm)
+        if result is None:
             print(f"note: no candidate extracted for {asset_key} (unreadable PDF or zero coverage lines parsed)")
             continue
+        candidate, generator_name, converter_name = result
+        # Value-free (a package name, never document content): which
+        # converter served this run (spec 006 FR-001/FR-002, quickstart.md
+        # Scenario 1 step 1).
+        print(f"note: converted via {converter_name}")
         confirmed = confirm_candidate(candidate)
         if confirmed is None:
             print(f"note: {asset_key} not confirmed; nothing cached")
@@ -166,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
             asset_key=asset_key,
             source_path=str(pdf_path),
             confirmed_at=datetime.now(timezone.utc).isoformat(),
+            generator=generator_name,
+            converter=converter_name,
         )
         path = write_policy_reference(reference, reports_dir)
         print(f"cached: {path}")

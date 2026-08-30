@@ -219,7 +219,16 @@ def main(argv: list[str] | None = None) -> int:
 
     current_policy = policydoc.read_policy_reference(_TARGET_ASSET_KEY, reports_dir)
     provenance = policydoc.read_policy_reference_provenance(_TARGET_ASSET_KEY, reports_dir)
-    current_policy_source, current_policy_confirmed_at = provenance if provenance else (None, None)
+    if provenance:
+        (
+            current_policy_source,
+            current_policy_confirmed_at,
+            current_policy_generator,
+            current_policy_converter,
+        ) = provenance
+    else:
+        current_policy_source = current_policy_confirmed_at = None
+        current_policy_generator = current_policy_converter = None
 
     comparison = compare.build_comparison(current_policy, captures)
     html = report.render_report(
@@ -229,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
         current_policy=current_policy,
         current_policy_source=current_policy_source,
         current_policy_confirmed_at=current_policy_confirmed_at,
+        current_policy_generator=current_policy_generator,
+        current_policy_converter=current_policy_converter,
     )
     path = report.write_report(html, reports_dir)
     print(f"REPORT {path}")
