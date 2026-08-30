@@ -46,6 +46,11 @@ anything else (a missing top-level key, `premium` as a non-object, `coverages` a
 array element missing `line`) is a schema mismatch, handled per the fallback matrix below, never a
 partial construction.
 
+A JSON number where a string is expected (`"term_months": 12` instead of `"term_months": "12"`)
+is coerced to its string form rather than rejected - Ollama's own `"format": "json"` constrains
+the response to valid JSON, not to this contract's own string-typed leaves. A JSON boolean, list,
+object, or `null` in a string-typed slot is never coerced and remains a schema mismatch.
+
 ### Failure classification (every non-success outcome collapses to "failed local-model attempt")
 
 | Condition | Classification |
@@ -56,7 +61,8 @@ partial construction.
 | `response` field is empty or missing entirely | Failed attempt (FR-011) - this is the `"think"`-omitted gotcha's own failure shape, treated identically whether or not `"think": false` was actually sent, since a future model or Ollama version could reproduce it independently of that flag |
 | `response` field is present but is not valid JSON | Failed attempt (FR-010) |
 | `response` field parses as JSON but does not match the candidate schema above | Failed attempt (FR-010) |
-| `response` field parses as JSON, matches the schema, and reaches this point | Success - proceed to the sanity pass (section 2) |
+| `response` field parses as JSON, matches the schema, but carries zero coverages, or every figure field (`premium.amount` plus every coverage line's own `limit`/`deductible`/`premium`) is empty | Failed attempt (FR-004 amendment, FIX-FIRST 1) - schema-valid but not a *usable* candidate; confirming it would hand the Director an empty policy with zero warnings |
+| `response` field parses as JSON, matches the schema, carries at least one coverage with at least one non-empty figure, and reaches this point | Success - proceed to the sanity pass (section 2) |
 
 Every "failed attempt" row produces exactly one value-free note and triggers the fallback in
 section 3 - never a partial candidate built from whatever the response did contain.
@@ -66,13 +72,26 @@ section 3 - never a partial candidate built from whatever the response did conta
 Runs against every candidate, from either generator, before it reaches `confirm_candidate`
 (FR-017 through FR-020, FR-026).
 
-### Normalization (applied to both sides of every comparison below)
+### Normalization (FIX-FIRST 2, Opus verifier, 2026-08-29 - digit-run token matching, not
+substring containment)
 
-1. Remove every `$` character.
-2. Remove every `,` character.
-3. Remove every whitespace character.
-4. What remains is the value's own digit sequence (a split limit such as `"100,000/300,000"`
-   normalizes to two digit sequences, `"100000"` and `"300000"`, both checked independently).
+The source text is tokenized ONCE per sanity-pass call into a set of its own maximal digit-run
+tokens: strip every `$` and `,` character, then take every maximal run of `[0-9.]` characters
+(a decimal point survives; other punctuation, including `/`, breaks a run into separate tokens -
+a split limit such as `"100,000/300,000"` in the source text already tokenizes into two
+independent tokens, `"100000"` and `"300000"`). A trailing all-zero fractional part is then
+stripped from every token (`"15000.00"` normalizes to `"15000"`; a real decimal such as
+`"753.25"` is unaffected, since its fractional part is not all zeros).
+
+A proposed figure passes the check only when its own normalized form (the same stripping and
+trailing-`.00` rule, applied per `"/"`-split part for a split value) EXACTLY EQUALS one token in
+this set - never mere substring containment. Substring containment was this contract's own
+original, since-replaced rule; an adversarial review proved it let a hallucinated figure sharing
+a digit-run SUFFIX or PREFIX with a real, unrelated figure elsewhere in the source pass
+undetected (for example, a hallucinated `"$50,000"` against a source that only ever states
+`"$150,000"`, or `"$3,000"` against `"$300,000"`) - exact token-membership closes this gap. A
+`"/"`-split part containing no digit at all (for example `"N/A"`) is not a figure and passes
+through untouched (NIT 10) - there is nothing here for a digit-run check to verify.
 
 ### Figure-by-figure rule
 
@@ -97,7 +116,7 @@ fragment of the source text.
 | Rule | Behavior |
 | :--- | :--- |
 | Locate two dates in common United States formats near a policy-period label in the converted text | Regardless of which reads first in the text - a reversed order (the real document's own `"To:"` date preceding its `"From:"` date) is an expected input, not a parse error |
-| Compute the calendar-month span between them | An integer |
+| Compute the average-day month span between them (FIX-FIRST 3, Opus verifier, 2026-08-29: whole days apart, divided by the average Gregorian month length of 30.436875, rounded to the nearest integer - NOT calendar-month subtraction, which would need each date's own day-of-month to decide whether a partial month rounds up or down) | An integer |
 | Span 11-13 months | `term_months = "12"`, no warning |
 | Span 5-7 months | `term_months = "6"`, no warning |
 | Any other span | `term_months = "<N>"` (the exact rounded count), warning: `"term derived as <N> months, outside the two common terms"` |

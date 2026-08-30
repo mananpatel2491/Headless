@@ -77,23 +77,31 @@ def wired(monkeypatch, fake_vault):
     monkeypatch.setattr(policy_extract, "open_vault", lambda config: fake_vault)
     extraction_calls: list[str] = []
     confirm_calls: list[str] = []
+    use_llm_calls: list[bool] = []
 
-    def fake_extract_candidate(pdf_path):
+    def fake_extract_candidate_v2(pdf_path, *, config, use_llm=True, **_kwargs):
         extraction_calls.append(str(pdf_path))
-        return ExtractionCandidate(
+        use_llm_calls.append(use_llm)
+        candidate = ExtractionCandidate(
             insurer="Sample Mutual",
             premium={"term_months": "6", "amount": "612.00"},
             coverages=[{"line": "collision", "limit": "500", "deductible": "500", "premium": ""}],
             warnings=[],
         )
+        return candidate, "regex-v1", "pypdf-raw"
 
     def fake_confirm_candidate(candidate):
         confirm_calls.append(candidate.insurer)
         return CurrentPolicy(insurer=candidate.insurer, premium=candidate.premium, coverages=candidate.coverages)
 
-    monkeypatch.setattr(policy_extract, "extract_candidate", fake_extract_candidate)
+    monkeypatch.setattr(policy_extract, "extract_candidate_v2", fake_extract_candidate_v2)
     monkeypatch.setattr(policy_extract, "confirm_candidate", fake_confirm_candidate)
-    return {"vault": fake_vault, "extraction_calls": extraction_calls, "confirm_calls": confirm_calls}
+    return {
+        "vault": fake_vault,
+        "extraction_calls": extraction_calls,
+        "confirm_calls": confirm_calls,
+        "use_llm_calls": use_llm_calls,
+    }
 
 
 def test_processes_only_the_eligible_asset(wired, capsys):
@@ -147,9 +155,16 @@ def test_declined_confirmation_caches_nothing(monkeypatch, fake_vault, tmp_path)
     monkeypatch.setattr(policy_extract, "open_vault", lambda config: fake_vault)
     monkeypatch.setattr(
         policy_extract,
-        "extract_candidate",
-        lambda pdf_path: ExtractionCandidate(
-            insurer="X", premium={"term_months": "6", "amount": "1"}, coverages=[{"line": "collision", "limit": "1"}], warnings=[]
+        "extract_candidate_v2",
+        lambda pdf_path, **kwargs: (
+            ExtractionCandidate(
+                insurer="X",
+                premium={"term_months": "6", "amount": "1"},
+                coverages=[{"line": "collision", "limit": "1"}],
+                warnings=[],
+            ),
+            "regex-v1",
+            "pypdf-raw",
         ),
     )
     monkeypatch.setattr(policy_extract, "confirm_candidate", lambda candidate: None)
@@ -162,7 +177,7 @@ def test_declined_confirmation_caches_nothing(monkeypatch, fake_vault, tmp_path)
 
 def test_extraction_returning_none_moves_on_without_caching(monkeypatch, fake_vault, tmp_path):
     monkeypatch.setattr(policy_extract, "open_vault", lambda config: fake_vault)
-    monkeypatch.setattr(policy_extract, "extract_candidate", lambda pdf_path: None)
+    monkeypatch.setattr(policy_extract, "extract_candidate_v2", lambda pdf_path, **kwargs: None)
     confirm_called = []
     monkeypatch.setattr(policy_extract, "confirm_candidate", lambda candidate: confirm_called.append(1))
 
@@ -207,18 +222,19 @@ def test_zero_coverage_lines_for_one_asset_does_not_abort_processing_the_rest(mo
     fake_vault = _CountingFakeVault({"profile": json.dumps(two_asset_doc)})
     monkeypatch.setattr(policy_extract, "open_vault", lambda config: fake_vault)
 
-    def fake_extract_candidate(pdf_path):
+    def fake_extract_candidate_v2(pdf_path, **kwargs):
         if "rental" in str(pdf_path):
             return None  # zero coverage lines parsed - the ordinary degrade, not a crash
-        return ExtractionCandidate(
+        candidate = ExtractionCandidate(
             insurer="Sample Mutual",
             premium={"term_months": "6", "amount": "612.00"},
             coverages=[{"line": "collision", "limit": "500", "deductible": "500", "premium": ""}],
             warnings=[],
         )
+        return candidate, "regex-v1", "pypdf-raw"
 
     confirm_calls = []
-    monkeypatch.setattr(policy_extract, "extract_candidate", fake_extract_candidate)
+    monkeypatch.setattr(policy_extract, "extract_candidate_v2", fake_extract_candidate_v2)
     monkeypatch.setattr(
         policy_extract,
         "confirm_candidate",
@@ -234,3 +250,124 @@ def test_zero_coverage_lines_for_one_asset_does_not_abort_processing_the_rest(mo
     assert confirm_calls == ["Sample Mutual"]
     assert read_policy_reference("vehicles-primary", tmp_path / "reports") is not None
     assert read_policy_reference("addresses-rental", tmp_path / "reports") is None
+
+
+# --- provenance in the cached reference (spec 006-policy-extraction-v2, FR-023) ---
+
+
+def test_cached_reference_carries_generator_and_converter_provenance(monkeypatch, fake_vault, tmp_path):
+    monkeypatch.setattr(policy_extract, "open_vault", lambda config: fake_vault)
+    monkeypatch.setattr(
+        policy_extract,
+        "extract_candidate_v2",
+        lambda pdf_path, **kwargs: (
+            ExtractionCandidate(
+                insurer="Sample Assurance Mutual",
+                premium={"term_months": "12", "amount": "1200.00"},
+                coverages=[{"line": "medical_payments", "limit": "5,000", "deductible": "", "premium": ""}],
+                warnings=[],
+            ),
+            "local-llm:qwen3.5:35b",
+            "pymupdf4llm",
+        ),
+    )
+    monkeypatch.setattr(
+        policy_extract,
+        "confirm_candidate",
+        lambda candidate: CurrentPolicy(
+            insurer=candidate.insurer, premium=candidate.premium, coverages=candidate.coverages
+        ),
+    )
+
+    exit_code = policy_extract.main([])
+
+    assert exit_code == 0
+    reports_dir = tmp_path / "reports"
+    cache_path = reports_dir / "policy" / "vehicles-primary.json"
+    data = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert data["generator"] == "local-llm:qwen3.5:35b"
+    assert data["converter"] == "pymupdf4llm"
+
+
+def test_converter_note_is_printed_before_the_candidate(wired, capsys):
+    exit_code = policy_extract.main([])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "note: converted via pypdf-raw" in out
+
+
+# --- --no-llm (spec 006-policy-extraction-v2, FR-014, SC-005) --------------
+
+
+def test_no_llm_flag_is_forwarded_to_extract_candidate_v2(wired):
+    exit_code = policy_extract.main(["--no-llm"])
+    assert exit_code == 0
+    assert wired["use_llm_calls"] == [False]
+
+
+def test_without_no_llm_flag_use_llm_defaults_true(wired):
+    exit_code = policy_extract.main([])
+    assert exit_code == 0
+    assert wired["use_llm_calls"] == [True]
+
+
+def test_no_llm_flag_never_invokes_the_local_model_transport(monkeypatch, fake_vault, tmp_path):
+    # SC-005: fails if the injectable transport is invoked at all - proven
+    # against real (non-monkeypatched) extract_candidate_v2 dispatch logic,
+    # with a document whose text would otherwise trigger a local-model
+    # attempt (converter forced to the pypdf-raw fallback, real text).
+    monkeypatch.setattr(policy_extract, "open_vault", lambda config: fake_vault)
+
+    declarations_text = (
+        "Sample Mutual Insurance Company\n"
+        "Policy Period: 6 month term, effective 2026-01-01 to 2026-07-01\n"
+        "Bodily Injury Liability          100,000/300,000\n"
+        "Total Premium: $612.00\n"
+    )
+
+    class _FakePage:
+        def extract_text(self):
+            return declarations_text
+
+    class _FakeReader:
+        def __init__(self, path):
+            self.pages = [_FakePage()]
+
+    def _forbidden_transport(url, payload, timeout):
+        raise AssertionError("must never call the local-model transport under --no-llm")
+
+    from headless import policydoc as policydoc_module
+
+    def real_extract_candidate_v2(pdf_path, *, config, use_llm=True, **kwargs):
+        return policydoc_module.extract_candidate_v2(
+            pdf_path,
+            config=config,
+            use_llm=use_llm,
+            reader_factory=_FakeReader,
+            layout_converter=lambda path: "",  # force the pypdf-raw fallback path
+            transport=_forbidden_transport,
+        )
+
+    monkeypatch.setattr(policy_extract, "extract_candidate_v2", real_extract_candidate_v2)
+    # Never let a real confirm_candidate() reach the real input() builtin -
+    # accept whatever real candidate the (real) dispatch above produced.
+    monkeypatch.setattr(
+        policy_extract,
+        "confirm_candidate",
+        lambda candidate: CurrentPolicy(
+            insurer=candidate.insurer, premium=candidate.premium, coverages=candidate.coverages
+        ),
+    )
+
+    exit_code = policy_extract.main(["--no-llm"])
+    assert exit_code == 0
+    # A real candidate did get produced via the regex path (proving the
+    # dispatch actually ran, not merely that nothing happened) and cached.
+    assert read_policy_reference("vehicles-primary", tmp_path / "reports") is not None
+
+
+def test_no_llm_and_single_asset_flag_combine(wired):
+    exit_code = policy_extract.main(["vehicles.primary", "--no-llm"])
+    assert exit_code == 0
+    assert wired["extraction_calls"] == ["/tmp/example-auto-policy.pdf"]
+    assert wired["use_llm_calls"] == [False]

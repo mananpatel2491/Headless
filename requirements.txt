@@ -2,3 +2,4 @@ playwright>=1.62
 python-dotenv>=1.0
 pytest>=8.0
 pypdf>=4.0
+pymupdf4llm>=0.0.17

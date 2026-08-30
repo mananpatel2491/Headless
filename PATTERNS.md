@@ -461,3 +461,64 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   package that is deliberately not installed here). `get_secret`/`put_secret` check
   `type(exc).__name__ == "NotFound"` instead, which matches both the real SDK's exception
   (named `NotFound`) and a test double of the same name with no import required.
+- **Local-model extraction with a mechanical figure gate (v0.0.6, spec
+  006-policy-extraction-v2).** `scripts/policy_extract.py`'s candidate-generation step is now a
+  pipeline, not a single regex pass: `headless/policydoc.py`'s `convert_document` converts a
+  `policy_doc` PDF with `pymupdf4llm` (layout-aware Markdown, correctly ordered even against a
+  multi-column declarations page that scrambles `pypdf`'s own plain-text extraction), falling
+  back to the existing `pypdf` raw-text path (`"pypdf-raw"`) on an import failure or a raised
+  conversion call; `extract_candidate_v2` then attempts a local-only model
+  (`generate_candidate_via_local_model`, via the new `headless/localllm.py` seam) unless
+  `--no-llm` was passed, falling back automatically to the unchanged v0.0.5 regex heuristics
+  (`_generate_regex_candidate`, refactored out of the old `extract_candidate` so both the public
+  pypdf-path wrapper and the v2 dispatch share one implementation) whenever the local-model
+  attempt fails any classification in `contracts/extraction-v2.md` section 1 (connection
+  failure, missing model, timeout, empty response, non-JSON response, schema mismatch, or a
+  schema-valid response that is not a *usable* candidate - FIX-FIRST 1, Opus verifier,
+  2026-08-29: zero coverages, or every figure field empty, is treated exactly like a failed
+  attempt, since confirming it would hand the Director an empty policy with zero warnings) -
+  every failure collapses to one value-free warning
+  (`"local model unavailable, fell back to the regex-based generator"`), never a crash and never
+  a partial candidate; when even the regex fallback then finds zero coverage lines, this note is
+  still printed directly (NIT 8) rather than lost, so a down/unusable local model stays
+  distinguishable from a genuinely unreadable PDF. `apply_sanity_pass` then strips any figure
+  (premium amount, or a coverage line's own limit/deductible/premium) that is not an EXACT match
+  (FIX-FIRST 2, Opus verifier, 2026-08-29) for one of the source text's own digit-run tokens
+  (strip `$`/commas, tokenize on remaining non-digit-non-dot characters, tolerate a trailing
+  `.00`/`.0`) - never mere substring containment, which an adversarial review proved let a
+  hallucinated figure sharing a digit-run suffix or prefix with a real, unrelated figure
+  elsewhere in the source pass undetected (`"$50,000"` against a source stating only
+  `"$150,000"`; `"$3,000"` against `"$300,000"`). A value with no digit at all (`"N/A"`) is not a
+  figure and passes through untouched. Stripped figures are replaced with a value-free warning
+  naming only the field - run uniformly against a regex-derived candidate too, since a regex
+  match is by construction one of its own source's tokens and the check trivially passes for it.
+  A new shared helper, `derive_term_from_dates`, locates two policy-period dates (in either
+  order - the real defect this feature was scoped from reversed them) near a `"Policy Period"`
+  label and computes a term as an average-day month span (whole days apart, divided by the
+  average Gregorian month length of 30.436875, rounded to the nearest integer - not
+  calendar-month subtraction) (11-13 months -> `"12"`, 5-7 -> `"6"`, otherwise the exact rounded
+  count plus a warning) - used by both generators, closing the annual-policy gap (no "12-month"
+  phrase ever appears on an annual declarations page) in the regex path too, not only the
+  local-model one; `apply_sanity_pass` exempts `term_months` from its own literal-match check
+  only when it equals what this helper currently derives from the same source text, determined
+  by recomputing the derivation rather than threading a new field through
+  `ExtractionCandidate`'s own unchanged shape. The confirmed reference (`PolicyReference`,
+  `reports/policy/<asset-key>.json`) gains two
+  additive fields, `generator` (`"regex-v1"` or `"local-llm:<model>"`) and `converter`
+  (`"pymupdf4llm"` or `"pypdf-raw"`) - `read_policy_reference_provenance` now returns a 4-tuple,
+  defaulting the two new fields to `"unknown"` when reading a cache file written before this
+  feature existed (additive-only, never an error); `headless/report.py`'s provenance footer
+  surfaces both, degrading to the exact v0.0.5 footer shape when either is absent.
+  `headless/localllm.py` (new) owns the local-model HTTP contract: `POST
+  <HEADLESS_OLLAMA_URL>/api/generate` via the standard library's `urllib.request` (no new HTTP
+  dependency), with the proven payload shape (`"think": false` is mandatory - omitting it causes
+  `qwen3.5` to spend its whole budget on internal reasoning and return an empty `response`
+  field, research.md) and an injectable `transport` callable so no unit test ever opens a real
+  socket; `headless/config.py` gains `ollama_model`/`ollama_url` (`HEADLESS_OLLAMA_MODEL`
+  default `qwen3.5:35b`, `HEADLESS_OLLAMA_URL` default `http://localhost:11434`), validated at
+  `load_config()` time exactly like `age_file`'s own precedent - a `ConfigError` refuses any
+  `HEADLESS_OLLAMA_URL` whose host is not `localhost`/`127.0.0.1`, before any conversion,
+  extraction, or network call, so policy text can never leave the Director's own machine. The
+  unchanged confirmation gate (`confirm_candidate`) remains the only path to a cache write for a
+  candidate from either generator - a local-model-generated candidate is never pre-confirmed,
+  and the sanity pass runs before, never in place of, that gate.

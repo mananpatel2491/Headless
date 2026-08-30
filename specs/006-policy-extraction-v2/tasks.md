@@ -17,11 +17,17 @@ implementation task it covers.
 **Organization**: tasks are grouped by user story so each story is independently implementable and
 testable, per this repository's own `tasks-template.md` convention.
 
-**Status**: NOT STARTED. This delivery is spec-authoring only (`spec.md`, `plan.md`,
-`research.md`, `data-model.md`, `contracts/extraction-v2.md`, `quickstart.md`, this file, and
-`checklists/requirements.md`) - no source file under `headless/`, `scripts/`, `tests/`, or
-`requirements.txt` has been touched, and no branch beyond the existing `v0.0.6` worktree has been
-created. Every checkbox below is unchecked.
+**Status**: IMPLEMENTED (2026-08-29), T001-T040 and T042 complete; T041 (Director UAT against the
+Director's own real declarations PDF and real Ollama instance) intentionally not performed by this
+delivery, which never touches `~/.headless/` or opens a real browser window. Opus verifier reviewed
+the staged implementation (MERGEABLE AFTER FIX-FIRST) and all 4 FIX-FIRST, 1 IMPORTANT, and 6 NIT
+findings were applied in the same worktree - see `Project_Structure.md`'s own v0.0.6 changelog row
+for the full account. Full commit gate green after the fix batch (`pytest -q`: 574 passed, 9
+skipped, up from the 478/8 v0.0.5 baseline; `verify_structure.py` SUCCESS; `scan_secrets.py
+--staged` clean); opt-in browser suite green (`HEADLESS_TEST_BROWSER=1`, 8 passed); opt-in
+`HEADLESS_TEST_OLLAMA=1` integration test run twice against the real local `qwen3.5:35b` server on
+this machine and passed both times (6.48s, then 6.66s after the fix batch, schema-valid response
+each time). Left staged, uncommitted.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -42,15 +48,15 @@ worktree root `../worktrees/Headless/v0.0.6/`.
 
 **Purpose**: the dependency and configuration surface every later phase builds on.
 
-- [ ] T001 [P] Update `requirements.txt`: add `pymupdf4llm` as an ordinary entry (research.md D2 -
+- [x] T001 [P] Update `requirements.txt`: add `pymupdf4llm` as an ordinary entry (research.md D2 -
   not a separate optional-extras file)
-- [ ] T002 [P] Update `.env.example`: document `HEADLESS_OLLAMA_MODEL` (default `qwen3.5:35b`)
+- [x] T002 [P] Update `.env.example`: document `HEADLESS_OLLAMA_MODEL` (default `qwen3.5:35b`)
   and `HEADLESS_OLLAMA_URL` (default `http://localhost:11434`), including the localhost-only rule,
   matching the existing comment style for `HEADLESS_AGE_FILE`
-- [ ] T003 [P] `tests/test_config.py`: write tests (to fail first) for `ollama_model`/`ollama_url`
+- [x] T003 [P] `tests/test_config.py`: write tests (to fail first) for `ollama_model`/`ollama_url`
   default resolution, override via environment, and the `ConfigError` refusal of any
   `HEADLESS_OLLAMA_URL` whose host is not `localhost`/`127.0.0.1` (spec FR-006, FR-007)
-- [ ] T004 `headless/config.py`: add `ollama_model: str` and `ollama_url: str` fields to `Config`;
+- [x] T004 `headless/config.py`: add `ollama_model: str` and `ollama_url: str` fields to `Config`;
   resolve both from `HEADLESS_OLLAMA_MODEL`/`HEADLESS_OLLAMA_URL` with the documented defaults;
   raise `ConfigError` for a non-localhost host, mirroring `age_file`'s own load-time validation
   pattern exactly (depends on T003 existing and failing first)
@@ -69,21 +75,21 @@ needed by every user story below, before any generator-dispatch work begins.
 
 **CRITICAL**: no user story task may begin until this phase is complete.
 
-- [ ] T005 [P] `tests/test_localllm.py`: write tests (to fail first) for request construction (the
+- [x] T005 [P] `tests/test_localllm.py`: write tests (to fail first) for request construction (the
   exact payload shape including `"think": false` and `"options": {"temperature": 0}`, spec
   FR-005), the injectable-transport seam never opening a real socket (spec FR-009), and every
   failure classification in `contracts/extraction-v2.md` section 1 (connection failure, missing
   model, timeout, empty response, non-JSON response, schema-mismatch response) each collapsing to
   the same "failed attempt" outcome
-- [ ] T006 `headless/localllm.py` (NEW): implement the request/response contract against T005 -
+- [x] T006 `headless/localllm.py` (NEW): implement the request/response contract against T005 -
   the injectable transport callable, the payload builder, the response parser and schema
   validator, and the localhost-only host check (using `Config.ollama_url`, already validated by
   T004 at load time) (depends on T005 existing and failing first)
-- [ ] T007 [P] `tests/test_policydoc.py` (new test functions, existing file): write tests (to fail
+- [x] T007 [P] `tests/test_policydoc.py` (new test functions, existing file): write tests (to fail
   first) for the shared term-derivation helper - two dates in either order near a period label,
   the 11-13-month and 5-7-month normalization bands, the "outside the two common terms" warning
   path, and the "fewer than two dates found" no-op path (spec FR-021)
-- [ ] T008 `headless/policydoc.py`: implement the term-derivation helper against T007, as a
+- [x] T008 `headless/policydoc.py`: implement the term-derivation helper against T007, as a
   standalone function usable by both generators (spec FR-022) (depends on T007 existing and
   failing first)
 
@@ -106,46 +112,46 @@ figures and `term_months` `"12"`.
 
 ### Tests for User Story 1 (write first)
 
-- [ ] T009 [P] [US1] `tests/fixtures/`: add a wholly synthetic fixture reproducing the real
+- [x] T009 [P] [US1] `tests/fixtures/`: add a wholly synthetic fixture reproducing the real
   document's own shape - a scrambled-column-order text (or a small built-once PDF, implementer's
   choice per research.md D9) whose policy-period dates are eleven to thirteen months apart with
   no "N-month" phrase anywhere; NO real value, name, policy number, or premium of any kind
   (spec NFR-003)
-- [ ] T010 [P] [US1] `tests/test_policydoc.py`: write tests (to fail first) for the
+- [x] T010 [P] [US1] `tests/test_policydoc.py`: write tests (to fail first) for the
   layout-aware-conversion-succeeds path using a fake converter double (never a real
   `pymupdf4llm` call), asserting the converted text is what the local-model generator (via a fake
   transport) and the regex generator each receive
-- [ ] T011 [P] [US1] `tests/test_policydoc.py`: write a test (to fail first) for the end-to-end
+- [x] T011 [P] [US1] `tests/test_policydoc.py`: write a test (to fail first) for the end-to-end
   happy path against T009's fixture - fake converter, fake local-model transport returning a
   valid candidate with `term_months` omitted or wrong, asserting the term-derivation helper (T008)
   supplies or overrides it to `"12"` (spec FR-020, SC-001)
-- [ ] T012 [P] [US1] `tests/test_policy_extract.py`: write a test (to fail first) asserting the
+- [x] T012 [P] [US1] `tests/test_policy_extract.py`: write a test (to fail first) asserting the
   cached reference for this scenario carries `generator: "local-llm:<model>"` and
   `converter: "<layout-aware converter name>"` (spec FR-023)
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] `headless/policydoc.py`: implement the conversion step - call the layout-aware
+- [x] T013 [US1] `headless/policydoc.py`: implement the conversion step - call the layout-aware
   converter first, producing a `ConvertedDocument`-shaped `(text, converter_name)` pair; on import
   failure or a raised exception, fall back to the existing `pypdf` raw-text call, recording
   `converter_name = "pypdf-raw"` (spec FR-001, FR-002) (depends on T010 existing and failing
   first)
-- [ ] T014 [US1] `headless/policydoc.py`: implement the local-model generator - build the prompt
+- [x] T014 [US1] `headless/policydoc.py`: implement the local-model generator - build the prompt
   from the converted text, call `headless/localllm.py`'s transport (T006), and construct an
   `ExtractionCandidate` from a successful, schema-valid response (spec FR-004, FR-005, FR-010)
   (depends on T006, T013)
-- [ ] T015 [US1] `headless/policydoc.py`: wire the term-derivation helper (T008) into the
+- [x] T015 [US1] `headless/policydoc.py`: wire the term-derivation helper (T008) into the
   local-model generator's own candidate construction, applying the override-and-note rule from
   spec FR-020 when the model's own claim disagrees (depends on T008, T014)
-- [ ] T016 [US1] `headless/policydoc.py`: extend `PolicyReference` with the two new provenance
+- [x] T016 [US1] `headless/policydoc.py`: extend `PolicyReference` with the two new provenance
   fields (`generator`, `converter`); update `write_policy_reference`'s own serialization to
   include them (spec FR-023) (depends on T014)
-- [ ] T017 [US1] `scripts/policy_extract.py`: wire the new dispatch (conversion, then local-model
+- [x] T017 [US1] `scripts/policy_extract.py`: wire the new dispatch (conversion, then local-model
   generation) into the existing per-asset loop, constructing the extended `PolicyReference` with
   the generator/converter values the pipeline now carries (depends on T016)
-- [ ] T018 [US1] `headless/report.py`: extend the provenance footer to surface the two new fields
+- [x] T018 [US1] `headless/report.py`: extend the provenance footer to surface the two new fields
   from a confirmed reference, alongside the existing `source_path`/`confirmed_at` (spec FR-024)
-- [ ] T019 [P] [US1] `tests/test_report.py`: write and pass a test asserting the footer renders
+- [x] T019 [P] [US1] `tests/test_report.py`: write and pass a test asserting the footer renders
   the two new provenance fields when present, and degrades to the existing v0.0.5 footer shape
   when a cache file predates this feature (no `generator`/`converter` keys)
 
@@ -166,31 +172,31 @@ the sanity pass removes it before `confirm_candidate` is called; set a non-local
 
 ### Tests for User Story 2 (write first)
 
-- [ ] T020 [P] [US2] `tests/test_policydoc.py`: write tests (to fail first) for the sanity pass -
+- [x] T020 [P] [US2] `tests/test_policydoc.py`: write tests (to fail first) for the sanity pass -
   a hallucinated premium amount, a hallucinated coverage limit, and a hallucinated deductible each
   stripped with the exact value-free warning text from `contracts/extraction-v2.md` section 2
   (spec FR-017, FR-018, SC-002); a clean candidate (every figure present in the source) passes
   through unchanged; `insurer` and each coverage line's own name are never checked (spec FR-028)
-- [ ] T021 [P] [US2] `tests/test_policydoc.py`: write a test (to fail first) for the
+- [x] T021 [P] [US2] `tests/test_policydoc.py`: write a test (to fail first) for the
   regex-generated candidate case - since a regex match is always a substring of its own source, a
   clean regex-derived candidate must never have any figure stripped by the sanity pass
-- [ ] T022 [P] [US2] `tests/test_config.py`: confirm (from T003, extend if needed) that the
+- [x] T022 [P] [US2] `tests/test_config.py`: confirm (from T003, extend if needed) that the
   localhost-only refusal happens with zero network call and zero PDF conversion attempted - a
   structural assertion via a fake transport/converter that must never be invoked (spec SC-003)
-- [ ] T023 [P] [US2] `tests/test_policydoc.py`: write a test (to fail first) proving a candidate
+- [x] T023 [P] [US2] `tests/test_policydoc.py`: write a test (to fail first) proving a candidate
   that fails confirmation (declined, or an uncorrectable correction) at the unchanged
   `confirm_candidate` step is never written to the cache, regardless of which generator produced
   it (spec FR-026)
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] `headless/policydoc.py`: implement the sanity pass - the normalization rule and
+- [x] T024 [US2] `headless/policydoc.py`: implement the sanity pass - the normalization rule and
   the figure-by-figure literal-match check from `contracts/extraction-v2.md` section 2, called
   against every candidate (from either generator) before it reaches `confirm_candidate` (spec
   FR-017, FR-018, FR-019, FR-026) (depends on T020, T021 existing and failing first)
-- [ ] T025 [US2] `headless/policydoc.py`: wire the sanity pass into the extraction dispatch
+- [x] T025 [US2] `headless/policydoc.py`: wire the sanity pass into the extraction dispatch
   between candidate generation (T014, or the regex path) and `confirm_candidate` (depends on T024)
-- [ ] T026 [P] [US2] `tests/test_structural_grep.py`: confirm (no code change expected, per
+- [x] T026 [P] [US2] `tests/test_structural_grep.py`: confirm (no code change expected, per
   research.md D4's own "verified compatible without change" finding) that
   `test_sc022_no_llm_or_ai_client_import_in_the_comparison_or_extraction_path` still passes once
   `headless/localllm.py` and its `urllib.request`-based call exist - re-run this exact test as
@@ -213,27 +219,27 @@ value-free note.
 
 ### Tests for User Story 3 (write first)
 
-- [ ] T027 [P] [US3] `tests/test_policydoc.py`: write tests (to fail first) for every fallback
+- [x] T027 [P] [US3] `tests/test_policydoc.py`: write tests (to fail first) for every fallback
   trigger in `contracts/extraction-v2.md` section 3 - connection failure, missing model, timeout,
   empty response, non-JSON response, schema-mismatch response - each producing exactly one
   value-free note and a regex-generated candidate (spec FR-013, SC-004)
-- [ ] T028 [P] [US3] `tests/test_policy_extract.py`: write a test (to fail first) for the
+- [x] T028 [P] [US3] `tests/test_policy_extract.py`: write a test (to fail first) for the
   `--no-llm` flag - the injected local-model transport must never be invoked for any asset in
   that run, and every cached reference's own `generator` field reads `"regex-v1"` (spec FR-014,
   SC-005)
-- [ ] T029 [P] [US3] `tests/test_policydoc.py`: write a test (to fail first) confirming a
+- [x] T029 [P] [US3] `tests/test_policydoc.py`: write a test (to fail first) confirming a
   converted-but-empty document (from either converter) still yields `None`, never a crash,
   unchanged from v0.0.5 (spec FR-015, SC-007)
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] `headless/policydoc.py`: implement the fallback dispatch - any local-model
+- [x] T030 [US3] `headless/policydoc.py`: implement the fallback dispatch - any local-model
   failure per T027's own classification triggers the regex-based generator automatically, with
   exactly one value-free note (spec FR-013) (depends on T027 existing and failing first)
-- [ ] T031 [US3] `scripts/policy_extract.py`: add the `--no-llm` argparse flag; when set, skip
+- [x] T031 [US3] `scripts/policy_extract.py`: add the `--no-llm` argparse flag; when set, skip
   the local-model attempt entirely for every asset processed in the run (spec FR-014) (depends on
   T028 existing and failing first)
-- [ ] T032 [US3] `headless/policydoc.py`: confirm (add a regression test if not already covered
+- [x] T032 [US3] `headless/policydoc.py`: confirm (add a regression test if not already covered
   by T029) that the existing empty-conversion / zero-coverage-lines `None` path is unchanged by
   the new dispatch (spec FR-015)
 
@@ -247,35 +253,35 @@ under every failure mode this specification names.
 **Purpose**: docs of record, the constitutional amendment, the opt-in integration test, and the
 commit gate.
 
-- [ ] T033 [P] `PATTERNS.md`: add one new entry, "Local-model extraction with a mechanical figure
+- [x] T033 [P] `PATTERNS.md`: add one new entry, "Local-model extraction with a mechanical figure
   gate (v0.0.6, spec 006-policy-extraction-v2)," documenting the pipeline (conversion, local-model
   generation, sanity pass, unchanged confirmation gate), the fallback matrix, and the
   provenance-field convention - following this file's own established entry style exactly
-- [ ] T034 [P] `Project_Structure.md`: add rows for `headless/localllm.py` (new); update the
+- [x] T034 [P] `Project_Structure.md`: add rows for `headless/localllm.py` (new); update the
   descriptions for `headless/policydoc.py`, `headless/config.py`, `scripts/policy_extract.py`,
   and `requirements.txt`; append a new Changelog row for v0.0.6 following this file's own
   established row format exactly
-- [ ] T035 [P] `scripts/README.md`: update `policy_extract.py`'s own table row to mention the
+- [x] T035 [P] `scripts/README.md`: update `policy_extract.py`'s own table row to mention the
   local-model attempt, the `--no-llm` flag, and the fallback behavior
-- [ ] T036 [P] `MEMORY.md`: add a dated entry under "Open items" (or "Errands run" once a real
+- [x] T036 [P] `MEMORY.md`: add a dated entry under "Open items" (or "Errands run" once a real
   Director run has happened) recording this feature's own delivery and the pending Director UAT
   against his real declarations PDF
-- [ ] T037 `CLAUDE.md`: apply the drafted Secrets-section replacement text from `plan.md`'s own
+- [x] T037 `CLAUDE.md`: apply the drafted Secrets-section replacement text from `plan.md`'s own
   "Constitutional amendment" subsection verbatim (or as adapted during implementation)
-- [ ] T038 `.specify/memory/constitution.md`: bump to `1.4.0` (MINOR) and add the drafted Sync
+- [x] T038 `.specify/memory/constitution.md`: bump to `1.4.0` (MINOR) and add the drafted Sync
   Impact Report line from `plan.md` to the file's own header comment; update the Secrets Hard
   Rules bullet to match T037 (depends on T037)
-- [ ] T039 [P] An opt-in integration test, gated by `HEADLESS_TEST_OLLAMA=1`
+- [x] T039 [P] An opt-in integration test, gated by `HEADLESS_TEST_OLLAMA=1`
   (`tests/test_localllm.py` or a dedicated `tests/test_localllm_integration.py`): runs the real
   local-model seam against the synthetic scrambled snippet from T009/research.md and asserts
   schema validity only, never an exact value (spec NFR-002)
-- [ ] T040 Run the full commit gate: `python -m pytest -q`, `python scripts/verify_structure.py`,
+- [x] T040 Run the full commit gate: `python -m pytest -q`, `python scripts/verify_structure.py`,
   `python scripts/scan_secrets.py --staged` - all three green, with the opt-in browser suite and
   `HEADLESS_TEST_OLLAMA=1` suite both left unrun by default (unchanged convention, spec NFR-001)
 - [ ] T041 Run `python scripts/policy_extract.py` (quickstart.md Scenarios 1-4) against the
   Director's own real declarations PDF, with his own Ollama running - **Director UAT, pending**;
   this delivery's own brief is spec-authoring only and does not perform this task
-- [ ] T042 Run quickstart.md Scenario 6 (the localhost-only refusal) - safe to run without a real
+- [x] T042 Run quickstart.md Scenario 6 (the localhost-only refusal) - safe to run without a real
   PDF or a real Ollama instance; a reasonable first automated-adjacent check once implementation
   lands, ahead of T041's own Director-only scenarios
 

@@ -67,6 +67,42 @@ Record each working session's id here so it can be resumed with `claude --resume
 
 ## Open items
 
+- **Spec 006 (policy extraction v2, v0.0.6, 2026-08-29): implementation delivered, Director UAT
+  pending.** The Director's own first real declarations PDF (a three-page homeowners policy)
+  exposed two independent gaps in v0.0.5's regex-only extraction: `pypdf`'s own plain-text
+  extraction scrambled the multi-column layout, and an annual policy never states an "N-month"
+  phrase v0.0.5's own term regex looks for. Fixed with a pipeline: layout-aware conversion
+  (`pymupdf4llm`, `headless/policydoc.py`'s `convert_document`), a local-only Ollama model
+  attempt (`headless/localllm.py`, falling back automatically to the unchanged v0.0.5 regex
+  heuristics on any failure or `--no-llm`), a shared date-arithmetic term-derivation helper
+  (`derive_term_from_dates`, an average-day month span not calendar-month arithmetic, used by
+  both generators), and a mechanical sanity pass (`apply_sanity_pass`) that strips any figure not
+  an exact digit-run-token match against the converted source text before the unchanged Director
+  confirmation gate ever sees it. `PolicyReference` gains `generator`/`converter` provenance
+  fields, surfaced in the comparison report's footer. `headless/config.py` gains
+  `ollama_model`/`ollama_url`, with a value-free `ConfigError` refusing any
+  non-`localhost`/`127.0.0.1` `HEADLESS_OLLAMA_URL` before any conversion or network call.
+  **Opus verifier fix batch, same day, applied before commit**: 4 FIX-FIRST (a schema-valid but
+  empty-coverages/all-empty-figures local-model response now folds into the ordinary
+  failed-attempt fallback instead of being confirmed as-is; the sanity pass rewritten from
+  substring containment to exact digit-run token matching, closing a real hallucination-detection
+  gap an adversarial review found; docs reworded to the actual arithmetic/matching semantics; the
+  one FR-019 exemption test rewritten against a fixture that actually exercises the exemption),
+  1 IMPORTANT (a new test covers `scripts/quote_compare.py`'s own provenance 4-tuple wiring,
+  previously untested), 6 NIT (the integration test now uses the real prompt builder and fails
+  rather than skips on a schema mismatch; a tightened date-regex lookbehind plus a documented,
+  tested known false negative; the local-model fallback note now prints even when the regex path
+  also finds nothing; numeric leaves from the model are coerced to strings; a non-numeric figure
+  value passes through untouched; this changelog row's own Files Affected list corrected) - see
+  `Project_Structure.md`'s own v0.0.6 row for the full account. Unit suite green after the fix
+  batch (574 passed, 9 skipped, up from the 478/8 v0.0.5 baseline), `verify_structure.py`
+  SUCCESS, `scan_secrets.py --staged` clean, opt-in browser suite green (8 passed), and the
+  opt-in `HEADLESS_TEST_OLLAMA=1` integration test run twice against the real local
+  `qwen3.5:35b` server on this machine - passed both times (6.48s, then 6.66s after the fix
+  batch), schema-valid response each time. Pending: the Director's own
+  run against his real declarations PDF with his own Ollama running (quickstart.md Scenarios
+  1-5) - this delivery's own brief is implementation-only and never touches `~/.headless/` or
+  opens a real browser window.
 - **Spec 005 (insurance quote comparison, v0.0.5, 2026-08-25/26): implementation delivered,
   Director UAT pending.** Walk framework (`headless/steps.py`, `Session.click`/`capture`,
   `Errand.walk()`), type-discriminated array addressing in `ProfileRegistry` plus

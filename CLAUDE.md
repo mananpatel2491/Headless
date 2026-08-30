@@ -81,10 +81,14 @@ run repetitive work-portal chores.
   existing `profile` vault item, not a separate item - a JSON array of insurer id strings read
   by a direct document parse (the registry itself refuses any dotted path that ends on a list).
   There is no `current_policy` field anywhere in `profile`, and none is ever planned: each
-  insured asset (an `addresses[]`/`vehicles[]` element) carries its own `policy_doc` field, a
-  filesystem path to that asset's real policy PDF; `scripts/policy_extract.py` turns it into a
-  confirmed reference via deterministic heuristics (`pypdf`, never an LLM) plus mandatory
-  Director confirmation, cached under `reports/policy/<asset-key>.json`. `reports/` (both
+  insured asset carries its own `policy_doc` field, a filesystem path to that asset's real
+  policy PDF; `scripts/policy_extract.py` (v0.0.6, spec 006-policy-extraction-v2) turns it into a
+  confirmed reference via a layout-aware conversion and a local-only model (never a cloud one - a
+  value-free `ConfigError` refuses any non-localhost `HEADLESS_OLLAMA_URL`), falling back
+  automatically to the v0.0.5 regex heuristics whenever the local model is unavailable. No
+  candidate from either generator reaches the cache without first passing a mechanical check
+  that strips any figure absent from the converted document, and mandatory Director
+  confirmation, cached under `reports/policy/<asset-key>.json`. `reports/` (both
   `captures/` and the rendered comparison report) carries the same vault-grade local-data
   classification `previews/` already does - gitignored, never committed, shared, or attached
   anywhere, since a capture or a report can hold a real premium, a real coverage limit, and
