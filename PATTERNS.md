@@ -456,6 +456,73 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
     confirmation); a cached reference's own `warnings` field always means "at the moment of
     review," never a live description of a hand-corrected policy's own current state. See
     `research.md`'s own D1-D3 amendments and `contracts/fidelity.md` for the full account.
+- **Activity scan reads the Google Maps list view; Yelp and TripAdvisor refuse headless Chrome
+  (v0.0.9, spec 009-activity-scan).** Recon 2026-09-09 (headless Chrome 151, Headless profile,
+  read-only) found Google Maps' own list view renders fully - each result card carries a rating, a
+  review count, a category, an address, today's hours, and its own coordinates embedded in the
+  place link's own href (`!3d<lat>!4d<lon>`); a shortlisted result's own place page states weekly
+  hours as `table tr` rows, a website at `a[data-item-id="authority"]`, a phone at
+  `button[data-item-id^="phone"]`, and an address at `button[data-item-id="address"]`. Yelp
+  returned a "Verifying the device" wall and TripAdvisor's attractions page rendered blank; neither
+  is read by this feature. Every selector this feature depends on targets an ARIA role or a stable
+  attribute (`role="feed"`, `data-item-id`, the `/maps/place/` link shape), never a generated class
+  name, matching this repository's own existing selector-choice precedent elsewhere. `headless/
+  activities.py` (NEW, pure logic) excludes a venue by category first, matching every term on word
+  boundaries (`_has_word`), never a bare substring - so "shop" cannot swallow "Pottery workshop" -
+  and checking a keep-list of eight named activity-rental phrases,
+  `KEPT_CATEGORY_TERMS = ("kayak rental", "canoe rental", "paddleboard rental", "boat rental",
+  "bike rental", "bicycle rental", "ski rental", "skate rental")`, before any exclusion: a rental
+  business named this way is the activity itself ("Bike rental shop", "Kayak & canoe rental
+  shop"), so it survives, while an unrelated rental ("Tuxedo rental shop", "Party rental store")
+  is not on this list and is excluded normally - a bare "rental" keep-list would wrongly rescue
+  it. The exclusion terms: movie/dinner terms ("movie theater", "cinema", "restaurant",
+  "fast food"), then, after the first live scan (2026-09-09) showed a high rating alone can float
+  a loosely related result to the top (a window tinting shop for "glass blowing class", a DJ
+  service for "live music venue"), three more families: retail ("store", "shop", "supply",
+  "boutique", "dealer", "repair", "tinting", "roaster", "bubble tea", "florist", "framing"),
+  venues/services for hire ("wedding venue", "banquet", "coworking", "co-working", "dj service",
+  "event planner"), and kid-only places ("playground", "kids", "children", "toy", "elementary
+  school", "primary school", "middle school", "high school", "preschool", "nursery", "day care",
+  "daycare", "fitness program", "tutoring" - never a bare "school", which would also exclude the
+  "Dance school" and "Cooking school" categories two default queries exist to find). It then
+  scores a kept venue as a Bayesian-shrunk rating (toward a 4.0-star prior
+  weighted as 25 phantom reviews, so a five-star venue with three reviews never outranks a
+  4.6-star venue with six hundred) minus 0.04 per straight-line mile (an unlocated venue counts as
+  15 miles), minus 0.015 for every place the venue sits down its own query's Google result list
+  when that place (`position`) is known, plus 0.35 when the venue's name or category echoes a
+  query stem (`relevance_hit` - one compiled whole-word pattern per query, built from the query's
+  own words of three or more letters minus a fixed generic-word set, plus each word's own
+  inflection roots (`_bases`: "hiking" also matches "hike", "trails" also matches "trail",
+  "winery" also matches "wine"), matched only as a whole word with an optional suffix, never a
+  prefix - "comedy" cannot match "Comerica", "cooking" cannot match "Cookies") and minus 0.25 when
+  it echoes none - or leaves the score unaffected when `relevant` is the neutral `None`: no query
+  that surfaced the venue carried any meaning-carrying token at all (for example, a
+  `--queries-file` line reading "cafe bar club"). Two residual classes remain, both accepted: an
+  ordinary word that is also a token ("pool", "live", "board", "mini") still matches wherever it
+  appears as a word ("Board of Education", "Mini Storage"), and a compound or coined name that
+  only starts with a token ("Trailhead", "Escapology", "Brewhouse") misses the word-boundary match
+  entirely - Google's own list position and the venue's own rating still carry such a venue. Then a
+  day-window adjustment computed only for the enriched top `--details` venues (default 60; the
+  list view shows only today's own status, never a full weekly schedule, so the day-window
+  verdict for a day other than today needs that venue's own place page). `scripts/activity_scan.py`
+  (NEW) is read-only end to end: the results feed is scrolled by calling
+  `locator.evaluate("el => el.scrollBy(0, el.scrollHeight)")` on the feed element, never a click or
+  a keypress, and the errand never calls `.fill(`/`.type(`/`.press(`/`.click(`/`.dblclick(`/
+  `.select_option(`/`.check(`/`.set_input_files(` anywhere - `tests/test_no_direct_typing.py`'s
+  existing structural scan stays green with no exception needed. A query Google answers by
+  opening one place page directly instead of a results list (observed live for "Topgolf") is read
+  as that query's own single result at `position` 0 (`read_single_place`), its coordinates falling
+  back to the place page's own `/@<lat>,<lon>,` viewport pair when the usual `!3d<lat>!4d<lon>`
+  pair is absent. An Opus verifier fix batch (2026-09-09) made every query fail-soft: a query's
+  own navigation or read failure prints `note: query skipped for '<query>' (<ExceptionClass>)` and
+  the scan continues with the remainder, never sinking the whole run - closing the asymmetry with
+  the already-fail-soft per-venue detail read. `--apply` is a hidden flag, always refused; there is
+  no apply mode and none may
+  be added. `--near` (a coordinate pair or an address, geocoded once through Nominatim) is a
+  command-line argument only, never written to the profile registry or any vault item - the
+  repository is public, and a chosen point is personal data. Reports land at
+  `reports/activity/activity-scan-<UTC date>.md`/`.json`, a new sibling under the existing
+  gitignored `reports/` tree.
 
 ## 2. Coding Standards
 

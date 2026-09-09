@@ -23,8 +23,11 @@ and what is open.
   instead from a property of the encryption tool itself. The macOS Keychain (`security` CLI,
   account `headless`) and GCP Secret Manager both remain selectable via
   `HEADLESS_SECRETS_BACKEND` (`keychain`, `gcp`) but neither is the default any more;
-  `GcpBackend`'s code stays code-ready but inactive (`gcloud` is not installed on this machine
-  yet).
+  `GcpBackend`'s code stays code-ready but inactive. (2026-09-09 correction: `gcloud` IS now
+  installed on this machine, at `/opt/homebrew/bin/gcloud`, signed in to the Director's personal
+  Google account with a personal project as its default, and `terraform` 1.15.8 is at
+  `/opt/homebrew/bin/terraform`; `tflint` is absent. Neither has been used by this repository yet -
+  see the Google Maps connector open item below.)
 - Tooling gaps: `pwsh` absent, so `../worktree.ps1` cannot run; create worktrees by hand at
   `../worktrees/Headless/<branch>` with `git worktree add`.
 - Commit safety gate active: `core.hooksPath=.githooks` must be set in every clone/worktree
@@ -45,6 +48,26 @@ and what is open.
   Progressive walk (`headless/insurers/progressive.py`) therefore ships only the two landing
   steps; nothing past them is automated in this delivery.
 
+- **Yelp (`www.yelp.com/search?...`), 2026-09-09** - a headless preview lands on a "Verifying the
+  device..." interstitial (page title `yelp.com`), never the results; a bot check, not a login
+  wall. Not read by any errand. Untested under a real windowed Chrome (the same open question as
+  Progressive's block above).
+- **TripAdvisor (`www.tripadvisor.com/Attractions-...`), 2026-09-09** - a headless preview renders a
+  blank page (title `tripadvisor.com`, an empty screenshot): a client-side challenge that never
+  completes under headless Chrome. Not read by any errand.
+- **Google Maps list view (`www.google.com/maps/search/<query>/`), 2026-09-09** - renders fully
+  under headless Chrome with no consent wall on this profile: `div[role="feed"]` holds the result
+  cards, each with an `a[href*="/maps/place/"]` link (name in `aria-label`, coordinates as
+  `!3d<lat>!4d<lon>` in the href) and a `span[role="img"]` star label; the feed loads about 20
+  more cards per scroll until "You've reached the end of the list" (up to about 60 for a broad
+  query). A query Google answers with one obvious place (`Topgolf`) skips the list and opens that
+  place page directly (no feed; coordinates in the URL's `/@lat,lon,` viewport) - `activity_scan`
+  reads that page as the single result. A place page exposes weekly hours as `table tr` rows
+  (`"Saturday11 AM-7 PM"` with Google's own U+2013, `"FridayClosed"`, `"Open 24 hours"`), the
+  website as `a[data-item-id="authority"]`, phone and address as `button[data-item-id^="phone"]` /
+  `button[data-item-id="address"]` (`aria-label` "Phone: ..." / "Address: ..."). Class names churn;
+  these role/attribute selectors are the ones the errand depends on (`--check` probes three).
+
 ## Errands run (dated)
 
 | Date | Errand | Mode | Outcome |
@@ -56,6 +79,11 @@ and what is open.
 | 2026-08-25 | `probe https://www.progressive.com/ --apply` | apply | Director UAT of v0.0.1: window stayed hidden until "Your turn", correct; Director logged in by hand and pressed Enter. A following preview run of the same site then showed a logged-out page: the login did not persist. Root cause confirmed (specs/003-login-persistence): Chrome drops any cookie carrying no expiry (a session cookie, what most logins set) on every `launch_persistent_context` restart, even though a cookie with an expiry survives. Separately, the apply window showed Chrome's own "unsupported command-line flag: --no-sandbox" warning bar; root cause confirmed as Playwright adding `--no-sandbox` to every launch unless `chromium_sandbox=True` is passed. Both fixed in v0.0.3 (session cookie persistence on the launched-profile path; `chromium_sandbox=True` on every Chrome launch in the codebase). Site name only recorded here - no account details, no cookie names or values. |
 | 2026-08-25 | `probe https://www.progressive.com/ --apply`, then `probe https://www.progressive.com/` | apply, preview | Director UAT of v0.0.3: the `--no-sandbox` warning bar is gone (confirmed by the Director). The seed exported 7 session cookies (login, loginrouter, account.apps and policyservicing hosts) and the following preview re-imported them, so persistence works as specified; the Director judged login state from the public homepage, which shows the same header for everyone, and accepted the automated proof instead of re-running. OPEN QUESTION, not a defect: whether this site honours a restored session under the headless `HeadlessChrome` user agent. One orchestrator check of the login URL 100 minutes after the seed landed on the login page, which an idle timeout explains as well as user-agent binding would; the discriminating test (seed, then headless and `--show` previews of the login URL within a minute) is in the session transcript and has not been run. |
 | 2026-08-25 | `vault.py init` + `vault.py set profile` + `check_env` | n/a (vault maintenance, no browser errand) | Director UAT of v0.0.4: `check_env` 5/5 PASS with `vault PASS - age backend` after init (his first `set profile` before `init` was correctly refused with the init hint - the designed order guard). UAT-reported polish item, cosmetic only: every Playwright-using command on this machine (check_env, probe) prints a `Task was destroyed ... TargetClosedError` block AFTER its output - a Playwright 1.62 sync-API shutdown race on Python 3.14; exit codes are unaffected. Open: suppress or upstream-fix; fold into a later release. |
+| 2026-09-09 | `probe` x3 (Google Maps search, Yelp search, TripAdvisor attractions) | preview | Recon for spec 009-activity-scan on the shared profile, sequential (the profile lock refuses a second concurrent run). Google Maps: title `mini golf near Farmington Hills, MI - Google Maps`, full list rendered. Yelp: device-verification interstitial. TripAdvisor: blank page. All three recorded above as site traps. |
+| 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --day friday --start 17:00 --end 22:00 --radius-miles 22 --details 40` | scan (read-only) | First live run, about 10 minutes, exit 0: 35 queries, 1,300-odd cards, 675 venues after folding/exclusion/radius, 674 with coordinates, 653 rated, 40 place pages read for Friday hours. `Topgolf` returned no feed (Google opened the place page directly) - handled in the same session (`read_single_place`). The first ranking exposed a relevance gap: Google's deep result tail is loosely related (a window-tinting shop for "glass blowing class", a DJ service for "live music venue", billiards supply stores, a kids' playground), and a high rating alone floated them to the top - fixed in the same session with the non-activity category exclusions, the query-stem relevance term, and the list-position penalty (`headless/activities.py`, `score_venue`), then re-run (row below). The point scanned around is the Director's own and is not recorded here. |
+| 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --day friday --start 17:00 --end 22:00 --radius-miles 22 --details 80` | scan (read-only) | Second live run with the corrected ranking, about 12 minutes, exit 0: 35 queries, 536 venues after folding/exclusion/radius (down from 675 - the retail, trade-service, venue-for-hire and kid-only categories now drop out), 358 relevant / 178 not, 80 place pages read (40 open in the window, 18 partial, 6 closed, the rest "not checked"). The top of the list is now activities (escape rooms, an aerial adventure park, axe throwing, a winery with live music, a pinball arcade, bowling, indoor golf, then parks and nature preserves). Residual false positive at rank 38: a house painter whose category is the single word "Painting", surfaced by "paint and sip" through the "pain" stem - an exact-category exclusion would fix it; left as a known limit of the heuristic. The report is the Director's own evening shortlist and is not recorded here. |
+| 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --day saturday --start 17:00 --end 22:00 --radius-miles 22 --details 80` | scan (read-only) | Third live run, exit 0, after the Director corrected the date (12 September 2026 is a Saturday, not a Friday): same 35 queries, the Saturday hours verdict for the top 80, the report of record for the evening. Run on the code as it stood BEFORE the verifier fix batch of the same day (the batch changes exclusion and relevance details only; the shortlist the Director acted on was cross-checked by re-ranking the second run's own JSON for Saturday, which agreed on the top of the list). |
+| 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --check` | check | `CHECK 3 found, 0 missing` (`div[role="feed"]`, its `/maps/place/` link, the star `span[role="img"]`), exit 0, about 10 seconds. |
 
 ## Claude Code sessions (for resuming)
 
@@ -67,6 +95,63 @@ Record each working session's id here so it can be resumed with `claude --resume
 
 ## Open items
 
+- **Spec 009 (activity scan, v0.0.9, 2026-09-09): implementation delivered, first live scans run,
+  Director UAT pending.** A read-only errand (`scripts/activity_scan.py`, logic in
+  `headless/activities.py`) that ranks public venues around a CLI-supplied point for an evening
+  window, from the Google Maps list view (the one review source that renders under headless Chrome
+  - Yelp and TripAdvisor both refuse, see the site traps above). No apply mode exists or may be
+  added; `--check` probes the three list-view selectors. Ranking: Bayesian-shrunk rating (prior 4.0
+  over 25 phantom reviews), minus 0.04 per straight-line mile, minus 0.015 per place down Google's
+  own result list, plus 0.35 / minus 0.25 for a name or category that does / does not echo a query
+  stem, then the day-window verdict from the place page's weekly hours (closed in the window minus
+  1.0, open plus 0.2, partial plus 0.05, not enriched neutral); categories that are retail, trade
+  services, venues for hire, kid-only, a movie, or a dinner are excluded outright. Decided against
+  a Google Places API key or a Maps MCP connector for this feature (the MCP registry lists none as
+  of 2026-09-09; a Places key needs a billed GCP project under Lesson 5's cost gate and would live
+  outside the vault) - revisit only if the scan becomes a recurring errand. Open: the relevance
+  heuristics are tuned on one evening's queries around one suburb; a second use with a different
+  query list should re-check the exclusion terms and the stem matcher before trusting the top of
+  the list; hours enrichment reads only the top `--details` venues (80 on the second run), so a
+  deep result stays "not checked".
+  **Opus verifier fix batch, same day, applied before commit: 1 BLOCK, 7 IMPORTANT, 5 MINOR, 3 NIT,
+  all resolved.** BLOCK: the test suite's example-point constant and one test name attached a
+  personal context to the scanned coordinate (public repo) - replaced by a synthetic round-number example point, the
+  geocode fixture reduced to the sanctioned 4-decimal pair, the checklist now states the test suite
+  was scanned too. IMPORTANT: bare-substring category exclusion deleted "Dance school", "Cooking
+  school" and "Pottery workshop" (the very categories three default queries target) - now
+  whole-word matching, only kid-only school kinds named, and a "rental" keep-list checked first;
+  unparseable hours text ("Hours might differ") scored as closed (-1.0) - now "unknown"; the
+  four-letter prefix stem gave "comedy" a hit on "Comerica" and "cooking" on "Cookies" - replaced by
+  a whole-word-plus-inflections rule ("paint" still matches "Painting studio", "winery" matches
+  "Wine bar"); the report writer lacked the repo's chmod-before-and-after 0600 bracket on a
+  same-date overwrite - added, with a mode assertion; one failed query navigation aborted the whole
+  35-query scan - now per-query fail-soft with a `note: query skipped` line; the feed reader and the
+  scroll loop had zero test coverage - fakes extended (`get_by_text`, `evaluate`, nested
+  `locator`), tests added; research.md still said `--details 30` - corrected. MINOR/NIT: six
+  contract rows now have tests (MISSING selector, exit 2 plus debug traceback, GateRefused, empty
+  queries, details-skipped note, check writes no report); an out-of-range coordinate pair is refused
+  before any geocoder request; a non-clock `--start`/`--end` is refused; the single-place test asserts
+  its stdout line; the Nominatim User-Agent names the repository; the scroll loop gives up only after
+  two consecutive empty scrolls. Unit suite after the batch: 140 tests in the two new modules.
+- **Google Maps connector (next feature, Director decision 2026-09-09, not started):** the Director
+  asked for a Google Maps MCP connector registered IN this repository for future sessions to
+  identify locations, to be built after the activity-scan objective is met. Groundwork done in the
+  same session: the MCP registry lists no Google Maps connector; Google's own hosted server, Maps
+  Grounding Lite (`https://mapstools.googleapis.com/mcp`, Streamable HTTP, header `X-Goog-Api-Key`
+  or OAuth scope `maps-platform.mapstools`, API service `mapstools.googleapis.com`, tools
+  `search_places` / `lookup_weather` / `compute_routes`, 300 queries per minute) is an Essentials
+  SKU with 10,000 free events per month, then $7 per 1,000 - within Lesson 5's $0 target at
+  personal volume; an unauthenticated `initialize` POST to the endpoint already answers HTTP 200
+  (`StatelessServer`), so authentication is enforced per tool call, not at the handshake. Claude
+  Code registers it from a project-scoped `.mcp.json` (`type: "http"`, `url`, `headers` with
+  `${VAR}` expansion; project-scoped servers need a one-time approval in an interactive session).
+  Planned shape (spec 010): `.mcp.json` with the key expanded from an environment variable the
+  Director exports from the macOS Keychain (never a file in the repo, never `.env`), `terraform/`
+  declaring the API enablement plus an API-key restricted to that one service (Director applies;
+  no resource from the console or an ad-hoc CLI call), a `scripts/maps_check.py` live check
+  (initialize, tools/list, one `search_places` call, value-free output), a `check_env.py` row for the
+  key variable, docs of record. Grounding Lite's terms forbid use with a model that trains on the
+  data sent to it - a Director acknowledgment item for the spec.
 - **Spec 007 (extraction fidelity, v0.0.7, 2026-08-30): implementation delivered, Opus verifier
   fix batch applied, live-probe verification COMPLETE, Director UAT pending.** An independent
   audit against three of the Director's own real declarations PDFs probe-proved four defects in
