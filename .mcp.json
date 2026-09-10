@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "google-maps": {
+      "type": "http",
+      "url": "https://mapstools.googleapis.com/mcp",
+      "headers": {
+        "X-Goog-Api-Key": "${HEADLESS_MAPS_API_KEY}"
+      }
+    }
+  }
+}

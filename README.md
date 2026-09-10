@@ -114,6 +114,49 @@ python scripts/<errand>.py --show     # any mode, with the window visible from t
 The apply window no longer shows Chrome's "unsupported command-line flag: --no-sandbox"
 warning bar. There is no submit flag. See `CLAUDE.md` for the rules that make this safe.
 
+## Google Maps connector (optional)
+
+Spec 010-google-maps-connector registers Google's own hosted Maps Grounding Lite MCP server for
+every Claude Code session opened in this repository (`.mcp.json`), so a future session can
+identify a location, geocode a name, compute a route, or read the weather directly - no browser,
+no selector. No scan or errand in this repository needs it; every existing script runs exactly
+as before whether or not the connector is set up.
+
+Three Director steps set it up:
+
+1. **Apply** the Terraform declaration in `terraform/` (the only cloud resources it creates: two
+   API enablements and one API key restricted to the Maps Grounding Lite service):
+   ```bash
+   cd terraform && terraform init && terraform plan -var project_id="<your-project-id>"
+   ```
+   Review the plan: exactly three resources to create (two API enablements and one restricted
+   key), nothing else. Only then:
+   ```bash
+   terraform apply -var project_id="<your-project-id>"
+   ```
+2. **Store the key** printed by `terraform output -raw maps_api_key` in the macOS Keychain:
+   ```bash
+   security add-generic-password -a headless -s maps-api-key -w
+   ```
+3. **Export it** from the login shell (for example, in `~/.zshrc`):
+   ```bash
+   export HEADLESS_MAPS_API_KEY="$(security find-generic-password -a headless -s maps-api-key -w 2>/dev/null)"
+   ```
+
+The first interactive Claude Code session opened in this repository after the key is set prompts
+to approve the project-scoped `google-maps` server once; every later session reuses that
+approval.
+
+Prove it works with the live check:
+
+```bash
+python scripts/maps_check.py
+```
+
+Expected: three value-free rows (`server`, `tools`, `search`), each `PASS` or `SKIP`, exit 0. See
+`terraform/README.md` and `specs/010-google-maps-connector/` for the full cost gate, key
+handling, and quickstart.
+
 ## Public repo hygiene
 
 This repository is public. `scripts/scan_secrets.py` (standard library only, no install

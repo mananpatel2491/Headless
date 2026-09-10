@@ -523,6 +523,47 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   repository is public, and a chosen point is personal data. Reports land at
   `reports/activity/activity-scan-<UTC date>.md`/`.json`, a new sibling under the existing
   gitignored `reports/` tree.
+- **Google Maps connector: Google's hosted Maps Grounding Lite MCP server, registered
+  project-wide, key from the environment, cost-gated in terraform (v0.0.10,
+  spec 010-google-maps-connector).** `.mcp.json` registers the server `google-maps`
+  (`type: "http"`, `url: https://mapstools.googleapis.com/mcp`, header `X-Goog-Api-Key:
+  ${HEADLESS_MAPS_API_KEY}`) for every Claude Code session opened in this repository, so a future
+  session can identify a location, geocode a name, compute a route, or read the weather with no
+  browser at all - the activity scan (v0.0.9) keeps reading the Google Maps list view for its own
+  richer list data; this connector serves the narrower, no-browser lookup case instead. D1:
+  Google's own hosted server over a third-party MCP server (the MCP registry lists no Google Maps
+  connector; a community server would hold the key itself and need its own security review). D2:
+  the hosted server over a self-written FastMCP wrapper on the Places API (New) (150+ lines to
+  maintain for the same three capabilities). D3: the key from the environment, never the age
+  vault - `age` reads its passphrase from the controlling terminal, and Claude Code launches an
+  MCP server with none; the macOS Keychain plus a login-shell export
+  (`security add-generic-password -a headless -s maps-api-key -w`, then
+  `export HEADLESS_MAPS_API_KEY="$(security find-generic-password -a headless -s maps-api-key -w 2>/dev/null)"`
+  in `~/.zshrc`) is the key's home instead. D4: a restricted key (`restrictions.api_targets.service
+  = "mapstools.googleapis.com"`) declared in `terraform/main.tf`, applied only by the Director
+  after reviewing `terraform plan` (Lesson 5) - the two service enablements
+  (`apikeys.googleapis.com`, `mapstools.googleapis.com`) and the key are the ONLY cloud resources
+  this connector needs. D5: the live check (`scripts/maps_check.py`, `headless/mapsmcp.py`) makes
+  at most ONE billable call, for the fixed public place "Detroit Institute of Arts", and prints
+  counts and tool names only - never a place, an address, or a coordinate, and never the key (the
+  transport replaces the key value with `***` in every error text, and a non-JSON error page - a
+  gateway or proxy page can quote the request headers back - is never shown, only its length; the
+  Opus verifier proved the leak on this machine's proxied network before the fix, 2026-09-10). D6:
+  `.mcp.json` is project-scoped, so every future session in this repository gets the connector
+  after one Director approval. D7: no `check_env.py` row (that gate exits non-zero on anything
+  but PASS and the connector is optional) - `maps_check.py` is its own Lesson 4 check, with a
+  `SKIP` row (not a `FAIL`) for the expected unset-key state. Live on 2026-09-09 the server exposes
+  five tools - `search_places`, `lookup_weather`, `compute_routes`, `resolve_names`,
+  `resolve_maps_urls` (two more than Google's own documentation names) - over Streamable HTTP,
+  JSON-RPC 2.0, protocol `2025-06-18`; an unauthenticated `initialize`/`tools/list` already
+  succeed (`"StatelessServer"`), so authentication is enforced only per `tools/call`. Cost gate:
+  Maps Grounding Lite is an Essentials SKU with 10,000 free events per month, then $7.00 per
+  1,000 - projected $0/month at this repository's personal volume. 25 new tests
+  (`tests/test_maps_check.py`, `urllib.request.urlopen` stubbed) prove the message shapes, both
+  response body shapes (plain JSON and SSE), the transport's key-header/session-id handling, and
+  every CLI exit code, with zero real network calls; a live run against the real endpoint
+  (2026-09-09, no key set) independently confirmed `server PASS`, `tools PASS`, `search SKIP`,
+  exit 0.
 
 ## 2. Coding Standards
 

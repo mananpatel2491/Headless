@@ -5,6 +5,14 @@ profile.local.json
 service_account*.json
 *.age*
 
+# Terraform (spec 010-google-maps-connector): provider cache, state, and variable files
+# stay local; the dependency lock file is committed.
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+
 # Runtime artifacts
 previews/
 reports/
