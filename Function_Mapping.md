@@ -17,7 +17,10 @@ not an errand: it composes `ProgressiveQuoteErrand`'s own `.run()` call (and any
 via `headless.insurers.WALK_REGISTRY`) rather than owning a site, a `plan()`/`walk()`, or a
 `HANDOFF` of its own - see `scripts/README.md`'s own "Orchestrators" section for its row.
 `scripts/policy_extract.py` is a maintenance-adjacent script, not an errand either (no browser, no
-site) - see `scripts/README.md`'s Maintenance table.
+site) - see `scripts/README.md`'s Maintenance table. `scripts/maps_check.py` (spec
+010-google-maps-connector) is likewise a maintenance script, not an errand - it opens no browser
+window, has no site, and the errand contract (modes, `HANDOFF`) does not apply, so it has no row
+here either, matching `check_env.py`'s own precedent.
 
 ## Maintenance Rules
 

@@ -83,6 +83,7 @@ and what is open.
 | 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --day friday --start 17:00 --end 22:00 --radius-miles 22 --details 40` | scan (read-only) | First live run, about 10 minutes, exit 0: 35 queries, 1,300-odd cards, 675 venues after folding/exclusion/radius, 674 with coordinates, 653 rated, 40 place pages read for Friday hours. `Topgolf` returned no feed (Google opened the place page directly) - handled in the same session (`read_single_place`). The first ranking exposed a relevance gap: Google's deep result tail is loosely related (a window-tinting shop for "glass blowing class", a DJ service for "live music venue", billiards supply stores, a kids' playground), and a high rating alone floated them to the top - fixed in the same session with the non-activity category exclusions, the query-stem relevance term, and the list-position penalty (`headless/activities.py`, `score_venue`), then re-run (row below). The point scanned around is the Director's own and is not recorded here. |
 | 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --day friday --start 17:00 --end 22:00 --radius-miles 22 --details 80` | scan (read-only) | Second live run with the corrected ranking, about 12 minutes, exit 0: 35 queries, 536 venues after folding/exclusion/radius (down from 675 - the retail, trade-service, venue-for-hire and kid-only categories now drop out), 358 relevant / 178 not, 80 place pages read (40 open in the window, 18 partial, 6 closed, the rest "not checked"). The top of the list is now activities (escape rooms, an aerial adventure park, axe throwing, a winery with live music, a pinball arcade, bowling, indoor golf, then parks and nature preserves). Residual false positive at rank 38: a house painter whose category is the single word "Painting", surfaced by "paint and sip" through the "pain" stem - an exact-category exclusion would fix it; left as a known limit of the heuristic. The report is the Director's own evening shortlist and is not recorded here. |
 | 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --day saturday --start 17:00 --end 22:00 --radius-miles 22 --details 80` | scan (read-only) | Third live run, exit 0, after the Director corrected the date (12 September 2026 is a Saturday, not a Friday): same 35 queries, the Saturday hours verdict for the top 80, the report of record for the evening. Run on the code as it stood BEFORE the verifier fix batch of the same day (the batch changes exclusion and relevance details only; the shortlist the Director acted on was cross-checked by re-ranking the second run's own JSON for Saturday, which agreed on the top of the list). |
+| 2026-09-09 | `maps_check --no-search` and `maps_check` (no key set) | n/a (connector self-test, no browser window) | First live runs of the v0.0.10 connector check from the v0.0.10 worktree, both exit 0: `server PASS - StatelessServer (protocol 2025-06-18)`, `tools PASS - search_places, lookup_weather, compute_routes, resolve_names, resolve_maps_urls` (five tools, two more than Google's documentation names), `search SKIP` (no key on this machine yet). The handshake and the tool listing need no key; a tool call does. |
 | 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --check` | check | `CHECK 3 found, 0 missing` (`div[role="feed"]`, its `/maps/place/` link, the star `span[role="img"]`), exit 0, about 10 seconds. |
 
 ## Claude Code sessions (for resuming)
@@ -133,10 +134,33 @@ Record each working session's id here so it can be resumed with `claude --resume
   before any geocoder request; a non-clock `--start`/`--end` is refused; the single-place test asserts
   its stdout line; the Nominatim User-Agent names the repository; the scroll loop gives up only after
   two consecutive empty scrolls. Unit suite after the batch: 140 tests in the two new modules.
-- **Google Maps connector (next feature, Director decision 2026-09-09, not started):** the Director
-  asked for a Google Maps MCP connector registered IN this repository for future sessions to
-  identify locations, to be built after the activity-scan objective is met. Groundwork done in the
-  same session: the MCP registry lists no Google Maps connector; Google's own hosted server, Maps
+- **Spec 010 (Google Maps connector, v0.0.10, 2026-09-09): implementation delivered, Director
+  actions pending.** `.mcp.json` registers Google's hosted Maps Grounding Lite MCP server
+  project-wide with the key expanded from `HEADLESS_MAPS_API_KEY`; `headless/mapsmcp.py` plus
+  `scripts/maps_check.py` are the Lesson 4 live check (25 unit tests, live handshake proven, see the
+  errand row above); `terraform/` declares the two API enablements and one key restricted to
+  `mapstools.googleapis.com` (`terraform validate` green; provider cache, state and tfvars
+  gitignored, the lock file committed). PENDING, Director only: (1) pick the Google Cloud project
+  (billing must be linked even inside the free cap) and run `terraform plan` then `apply` from
+  `terraform/`; (2) `terraform output -raw maps_api_key` into the Keychain item `maps-api-key`
+  (account `headless`) and export `HEADLESS_MAPS_API_KEY` from the login shell; (3) run
+  `python scripts/maps_check.py` (one billable `search_places` call, well inside the 10,000 free
+  events per month) and record the outcome here; (4) approve the project-scoped server the first
+  time `claude` prompts in this repository; (5) acknowledge Grounding Lite's term that it must not
+  be used with a model that trains on the data sent to it.
+  **Opus verifier fix batch (2026-09-10), applied before commit: 1 BLOCK, 2 IMPORTANT, 4 MINOR, 6 NIT.**
+  BLOCK: the check's HTTP-error path echoed a non-JSON response body verbatim, and on this machine
+  every run goes through the employer's proxy, whose error pages quote the request line and headers -
+  the verifier printed a planted key to stdout. Fixed mechanically: `Transport._redact` replaces the key
+  value with `***` in every error text, and a non-JSON body is never shown (only its byte length); a
+  test plants the key in a gateway page and proves it never reaches stdout. IMPORTANT: `--no-search`
+  with the key set printed "key is not set" - the outcome now carries the skip reason; a blank or
+  whitespace key counts as unset. MINOR/NIT: SSE continuation lines are joined and array payloads
+  flattened per the SSE rule; the transport sends the protocol version the server negotiated; an
+  unstructured `search_places` answer prints "answered" instead of an invented count of 1; the README
+  terraform block gained the plan-review step; PATTERNS' export line and quickstart's citation
+  corrected; header-absence and bare-HTTPError branches now tested. Suite after the batch: 25 tests in
+  `tests/test_maps_check.py`. Groundwork that led here, same session: the MCP registry lists no Google Maps connector; Google's own hosted server, Maps
   Grounding Lite (`https://mapstools.googleapis.com/mcp`, Streamable HTTP, header `X-Goog-Api-Key`
   or OAuth scope `maps-platform.mapstools`, API service `mapstools.googleapis.com`, tools
   `search_places` / `lookup_weather` / `compute_routes`, 300 queries per minute) is an Essentials
@@ -145,13 +169,10 @@ Record each working session's id here so it can be resumed with `claude --resume
   (`StatelessServer`), so authentication is enforced per tool call, not at the handshake. Claude
   Code registers it from a project-scoped `.mcp.json` (`type: "http"`, `url`, `headers` with
   `${VAR}` expansion; project-scoped servers need a one-time approval in an interactive session).
-  Planned shape (spec 010): `.mcp.json` with the key expanded from an environment variable the
-  Director exports from the macOS Keychain (never a file in the repo, never `.env`), `terraform/`
-  declaring the API enablement plus an API-key restricted to that one service (Director applies;
-  no resource from the console or an ad-hoc CLI call), a `scripts/maps_check.py` live check
-  (initialize, tools/list, one `search_places` call, value-free output), a `check_env.py` row for the
-  key variable, docs of record. Grounding Lite's terms forbid use with a model that trains on the
-  data sent to it - a Director acknowledgment item for the spec.
+  Decided against a `check_env.py` row (that gate exits non-zero on anything but PASS and the
+  connector is optional) - `maps_check.py` is the connector's own check. The age vault is
+  deliberately not the key's home: `age` prompts on the controlling terminal and Claude Code
+  launches an MCP server without one; the macOS Keychain plus a login-shell export is.
 - **Spec 007 (extraction fidelity, v0.0.7, 2026-08-30): implementation delivered, Opus verifier
   fix batch applied, live-probe verification COMPLETE, Director UAT pending.** An independent
   audit against three of the Director's own real declarations PDFs probe-proved four defects in
