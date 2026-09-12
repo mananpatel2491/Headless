@@ -564,7 +564,93 @@ sessions inherit them instead of re-litigating them. Every entry reflects the ac
   every CLI exit code, with zero real network calls; a live run against the real endpoint
   (2026-09-09, no key set) independently confirmed `server PASS`, `tools PASS`, `search SKIP`,
   exit 0.
-
+- **Product scan ranks retail listings by material tier; Amazon primary, Home Depot opt-in,
+  Walmart reference-only behind a bot wall; a shared `wall_reason` helper (v0.0.11,
+  spec 011-product-scan).** Recon 2026-09-11 (headless Chrome 151, shared profile) found Amazon's
+  own search results page (`div[data-component-type="s-search-result"]`, 48 cards per page,
+  first-`.a-offscreen` price, `.a-icon-alt` rating, `[aria-label$="ratings"]` review count) and
+  Home Depot's own search pods (`[data-testid="product-pod"]`, duplicated in the DOM - fold by
+  canonical URL) both render under headless Chrome; Home Depot's own error page (`Oops!!
+  Something went wrong`) appears on every visit after the first, so it ships opt-in
+  (`--sites amazon,homedepot`), never on by default. Walmart, Lowe's, and Google Shopping all
+  redirect to a bot wall (`Robot or human?`, `Access Denied`, a captcha `/sorry/index`); Menards
+  renders a blank page; Target renders a title but none of the expected card attributes. Walmart
+  is therefore never searched: a `--reference-url` on `www.walmart.com` is read only as a single
+  product page, and a headless bot wall there prints `note: reference not readable headless (bot
+  wall) - rerun with --show` and falls back to `--reference` (a hand-typed
+  `"Title | price | length_ft [| rating [| reviews]]"` literal) when the Director supplies one -
+  `--show` is his own
+  escape hatch to a real, windowed Chrome, which the recon in `PATTERNS.md`'s own "Quiet by
+  default" entry already established can pass bot walls other headless runs cannot (Progressive,
+  v0.0.7.1). `headless/products.py`'s `wall_reason(title, url)` is the one shared bot-wall
+  detector every visited page passes through - a fixed title match (`WALL_TITLES`) or a
+  `/blocked?` URL fragment - used identically for a search page and a reference page, so the
+  detection logic is written and tested once. `parse_attributes(title)` turns a listing's own
+  title into height, length, material, stake count and material, a no-dig flag, and an exclusion
+  reason, entirely by regex, in a fixed rule order recorded in research.md - never an LLM call,
+  since a title's own physical claims are exactly the kind of short, structured, deterministic
+  text a regex can parse reliably and a test can pin down exactly (D-no-LLM). A stake phrase
+  ("150 Stainless Steel Stakes") is found and removed from the title before material detection
+  runs, so a plastic roll bundled with steel stakes is never mis-classified as a steel product.
+  A length written as a range (`40/100ft`, matching the Director's own Walmart listing, whose
+  40 ft and 100 ft variants share one title) resolves to the FIRST number, on the recorded
+  assumption that the listed price belongs to the first or default variant (D-first-variant,
+  research.md) - the same rule applies to a stake-count range (`60/120 Spikes`). Prices parse as
+  `float`, never `Decimal` (D-float-prices): these are public retail prices with no
+  reconciliation step, a deliberate, recorded contrast with `headless/compare.py`'s own
+  `Decimal`-only rule for insurance premiums, where a rounding error has real financial
+  consequences. `score_listing` shrinks a listing's own rating toward a 4.0-star prior weighted
+  as 25 phantom reviews (so a 5.0 with three reviews never outranks a 4.6 with six hundred),
+  subtracts `price_weight * price_per_ft` (a $0.30/ft roll loses 0.15; a $0.80/ft roll loses
+  0.40, so a strongly better-rated product still wins at twice the price per foot, while an equal
+  rating goes to the cheaper foot), a weak 0.005-per-position list-position term, and a 0.1
+  sponsored penalty; an unparsable price or length costs a flat 0.5 and a `flags` entry
+  (`"price unknown"`/`"length unknown"`) rather than a crash or a guessed number. `tier(material)`
+  groups plastic/rubber/unknown as `"plastic"`, steel/aluminum/metal as `"metal"`, and everything
+  else (stone-look, wood) as `"other"` - a listing is ranked within its own tier, never against a
+  different material's own economics, and the reference listing's own rank is computed the same
+  way and rendered in bold at that position. `scripts/product_scan.py` (NEW) is read-only end to
+  end, matching `activity_scan.py`'s own precedent exactly: `--apply` is a hidden flag, always
+  refused, and none may be added; one search page's wall, exception, or empty result prints a
+  `note:` line and the scan continues, a wall on a site's own page 1 skips that site's remaining
+  pages, and zero listings overall still writes a report and exits 0. Home Depot's own pods are
+  lazy-loaded and scrolled by `page.evaluate("window.scrollBy(0, document.body.scrollHeight)")`
+  (the whole page, not a feed element - Home Depot has no equivalent to Google Maps'
+  `role="feed"`), stopping after two scrolls in a row that load no new pod, the same stale-pass
+  rule `activity_scan.py` already established. Reports land at
+  `reports/product/product-scan-<slug>-<UTC date>.md`/`.json` (the query's own slug precedes the
+  date, fix batch A5/B9 below), a new sibling under the existing gitignored `reports/` tree -
+  public retail data, but `reports/` stays gitignored as it already is for every other errand.
+  **Fix batch, same day, after three live scans and an Opus verification (2026-09-11): 3 BLOCK, 7
+  FIX-FIRST, 10 MINOR, 4 NIT, all resolved** - see `Project_Structure.md`'s own v0.0.11 Changelog
+  row for the full account. The highlights that change how this pattern itself should be read
+  going forward: the stone-look material rule now requires an actual decorative-stone claim
+  ("faux stone," "stone effect/look/like," "stone texture," "polyrock," "bricks," "cobblestone,"
+  "concrete") rather than a bare "stone" or "paver" - ten plastic rolls in one live run tiered as
+  stone-look only because their title listed "Paver" among its uses, never because the product
+  was actually decorative; EVERY stake/spike phrase is stripped before material/height/length
+  parsing now, counted or not - an uncounted phrase ("with Metal Stakes") used to survive and
+  mistier a plastic roll as metal; the foot-length candidate now requires a LONE `'` (never
+  adjacent to another `'` or a `"`), since `''`/`"` are inch marks - `4'' X 100'` used to parse as
+  4 feet by 100 feet instead of 4 inches by 100 feet, and a title-stated grand total ("66FT
+  Total") now overrides every other length candidate; a height context window now stops at the
+  next dimension's own digit and never ends mid-word, closing two related bugs (an `L x W x H`
+  triple letting an earlier number claim a later one's own `H` marker, and a fixed-length cutoff
+  manufacturing a false `L` match by landing exactly after the "L" of "Landscape"); `rank()` now
+  takes `min_height_in` itself and returns a `RankResult` (tiers, excluded, dropped_by_height) so
+  an excluded or height-dropped listing is nameable, not just countable, and both reports list
+  each one by title; `position` is a running index per SITE across every page, never reset per
+  page; a literal `|` inside a title (a real Amazon title can carry several) is escaped before it
+  enters a Markdown table cell; and a title naming a pack/piece count (`"5 Piece"`, `"6 Pack"`,
+  or the reversed real-title order `"(Pack 6)"`) now flags `"pack: per-piece length"` when a
+  length was parsed, since such a title's own `$/ft` prices one piece, not the whole roll, by
+  design.
+  Post-batch live re-run finding (2026-09-11): the exclusion rule was a bare "fence" substring and
+  threw out 17 genuine edging listings (a brand name, use lists, "Mini Fence Border" marketing,
+  a decorative "fence look" kit); it now requires a real fence claim (animal barrier, "fencing",
+  fence panels, trellis) - see `specs/011-product-scan/research.md` D-fence-precision. A pack
+  whose title states its total (`(21ft Total)`) is no longer labeled per-piece
+  (`pack_flag_applies` = `is_pack` and not `has_total_marker`).
 ## 2. Coding Standards
 
 - `argparse` for every script; a module docstring that states the errand's background, the
