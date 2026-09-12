@@ -68,6 +68,30 @@ and what is open.
   `button[data-item-id="address"]` (`aria-label` "Phone: ..." / "Address: ..."). Class names churn;
   these role/attribute selectors are the ones the errand depends on (`--check` probes three).
 
+- **Amazon search (`www.amazon.com/s?k=<query>`), 2026-09-11** - renders fully under headless
+  Chrome, no wall: 48 cards per page on pages 1 and 2, every card selector this repository
+  depends on resolved on every card, 0 of 48 cards carried a sponsored label on this profile.
+  Read by `product_scan.py` (v0.0.11) as the primary search site.
+- **Home Depot search (`www.homedepot.com/s/<query>`), 2026-09-11** - the first visit in a
+  session renders 24 pods (12 unique products, pods duplicated in the DOM); every later visit
+  within about ten minutes shows title `Error Page`, body "Oops!! Something went wrong. Please
+  refresh page", zero pods, even after a 20 s selector wait and scrolling. Read by
+  `product_scan.py` (v0.0.11) opt-in only (`--sites amazon,homedepot`); an `Error Page` title is
+  treated as a wall and that page is skipped, never retried.
+- **Walmart (`www.walmart.com/ip/...`, `/search?q=...`), 2026-09-11** - redirects to
+  `/blocked?url=...`, title `Robot or human?`. Never searched by any errand; `product_scan.py`
+  (v0.0.11) reads a single Walmart product page only via `--reference-url`, and a headless wall
+  there falls back to a hand-typed `--reference` literal.
+- **Lowe's (`www.lowes.com/search?searchTerm=...`), 2026-09-11** - title `Access Denied`. Never
+  read by any errand.
+- **Google Shopping (`www.google.com/search?tbm=shop`), 2026-09-11** - redirects to
+  `/sorry/index` (a captcha page). Never read by any errand.
+- **Menards (`www.menards.com/main/search.html`), 2026-09-11** - empty title, blank page. Never
+  read by any errand.
+- **Target (`www.target.com/s?searchTerm=...`), 2026-09-11** - the title renders and the body
+  text holds real results, but none of the expected `data-test` product-card attributes exist on
+  this profile. Not read by `product_scan.py`'s v0.0.11 delivery; a candidate for a later spec.
+
 ## Errands run (dated)
 
 | Date | Errand | Mode | Outcome |
@@ -85,6 +109,15 @@ and what is open.
 | 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --day saturday --start 17:00 --end 22:00 --radius-miles 22 --details 80` | scan (read-only) | Third live run, exit 0, after the Director corrected the date (12 September 2026 is a Saturday, not a Friday): same 35 queries, the Saturday hours verdict for the top 80, the report of record for the evening. Run on the code as it stood BEFORE the verifier fix batch of the same day (the batch changes exclusion and relevance details only; the shortlist the Director acted on was cross-checked by re-ranking the second run's own JSON for Saturday, which agreed on the top of the list). |
 | 2026-09-09 | `maps_check --no-search` and `maps_check` (no key set) | n/a (connector self-test, no browser window) | First live runs of the v0.0.10 connector check from the v0.0.10 worktree, both exit 0: `server PASS - StatelessServer (protocol 2025-06-18)`, `tools PASS - search_places, lookup_weather, compute_routes, resolve_names, resolve_maps_urls` (five tools, two more than Google's documentation names), `search SKIP` (no key on this machine yet). The handshake and the tool listing need no key; a tool call does. |
 | 2026-09-09 | `activity_scan --near <point> --area "Farmington Hills, MI" --check` | check | `CHECK 3 found, 0 missing` (`div[role="feed"]`, its `/maps/place/` link, the star `span[role="img"]`), exit 0, about 10 seconds. |
+| 2026-09-11 | `probe` against ten retail search/product pages for the query "no dig landscape edging" (Amazon search, Amazon product `/dp/B01MG4ARN7`, Home Depot search first and second visit, Walmart search and product, Lowe's search, Google Shopping, Menards search, Target search), read-only, headless Chrome 151, shared profile, plus a scratchpad selector-probe script (`scripts/probe.py`-style reads, no `--apply`) | preview | Recon for spec 011-product-scan. Amazon: title `Amazon.com : no dig landscape edging`, 48 cards, every card selector resolved, 0 sponsored. Amazon product page: title `Amazon.com : EasyFlex Heavy Duty No-Dig Edging Kit - 100ft., Black : Patio, Lawn & Garden`. Home Depot first visit: title `Search Results for no dig landscape edging at The Home Depot`, 24 pods (12 unique); second and later visits: title `Error Page`. Walmart: title `Robot or human?`. Lowe's: title `Access Denied`. Google Shopping: redirected to `/sorry/index`. Menards: blank title. Target: title `"no dig landscape edging" : Target`, results text present but no matching card selector. All recorded above as site traps/inclusions. No product choice, price, or personal detail recorded here - see spec 011's own research.md for the query context. |
+| 2026-09-11 | `product_scan --query "no dig landscape edging" --pages 2 --reference-url "https://www.walmart.com/ip/18656266943"` | scan (read-only) | First live run of v0.0.11, PRE-fix-batch code, exit 0: 96 read, 77 after fold, 19 excluded (all "fence, not edging"), 0 dropped by height. The reference URL met the Walmart bot wall (`note: reference not readable headless (bot wall) - rerun with --show`); no `--reference` literal was given this run, so the report carries no reference block. Report at `reports/product/product-scan-2026-09-12.json` (pre-fix filename - no query slug yet). |
+| 2026-09-11 | `product_scan --query "4 inch tall landscape edging" --pages 2` | scan (read-only) | Second live run, PRE-fix-batch code, exit 0: 96 read, 85 after fold, 11 excluded, 0 dropped by height, no notes. Report at the fix batch's own scratchpad `run-4in/reports/product/product-scan-2026-09-12.json`. |
+| 2026-09-11 | `product_scan --query "steel landscape edging" --pages 1` | scan (read-only) | Third live run, PRE-fix-batch code, exit 0: 48 read, 40 after fold, 8 excluded, 0 dropped by height, no notes. Report at the fix batch's own scratchpad `run-steel/reports/product/product-scan-2026-09-12.json`. These three runs' own JSON files are the fix batch's evidence base (46 of 204 distinct listings changed material, tier, height, length, or stake count after the fix batch's own parser changes - see the fix-batch verifier's own delta table). |
+| 2026-09-11 | `product_scan --query "no dig landscape edging" --check` | check | PRE-fix-batch code, page-level selectors (`h2 span` etc. with no card ancestor): `CHECK 4 found, 0 missing`, exit 0. The fix batch (B10) makes these selectors card/pod-scoped instead; the orchestrator re-runs `--check` after the fix batch and records the POST-batch result in the row below. |
+| 2026-09-11 | `product_scan --query "no dig landscape edging" --check` | check | POST-fix-batch code, card/pod-scoped selectors (B10): `CHECK 4 found, 0 missing` (`div[data-component-type="s-search-result"]` and its scoped `h2 span`, `.a-price .a-offscreen`, `i[class*="a-icon-star"] .a-icon-alt`), exit 0, no report written; run twice (after the fix batch and again after the fence-precision fix), same result both times. |
+| 2026-09-11 | `product_scan --query "no dig landscape edging" --pages 2 --reference-url "https://www.walmart.com/ip/18656266943" --reference "<title> | 31.58 | 40 | 4.1 | 15"` | scan (read-only) | Report of record for the Director's question, FINAL code (fix batch + fence-precision fix), exit 0: 96 read, 96 unique after fold, 11 excluded (all real animal-barrier or decorative fences, each named in the report), 0 dropped by height, 85 ranked (70 plastic, 7 metal, 8 other). The Walmart reference URL met the bot wall (note printed) and the hand-typed literal carried the listing's own 4.1 rating over 15 ratings; the reference ranks #47 of 70 in the plastic tier. `reports/product/product-scan-no-dig-landscape-edging-2026-09-12.md`/`.json`, copied into the main clone after the merge. |
+| 2026-09-11 | `product_scan --query "4 inch tall landscape edging" --pages 2 --reference "<same literal>"` | scan (read-only) | FINAL code, exit 0: 96 read, 96 unique, 1 excluded, 95 ranked; the reference ranks #53 of 77 in the plastic tier (the same-height competitor set). `reports/product/product-scan-4-inch-tall-landscape-edging-2026-09-12.md`/`.json`. |
+| 2026-09-11 | `product_scan --query "steel landscape edging" --pages 1` | scan (read-only) | FINAL code, exit 0: 48 read, 48 unique, 0 excluded, 48 ranked, all in the metal tier. `reports/product/product-scan-steel-landscape-edging-2026-09-12.md`/`.json`. |
 
 ## Claude Code sessions (for resuming)
 
@@ -96,6 +129,56 @@ Record each working session's id here so it can be resumed with `claude --resume
 
 ## Open items
 
+- **Spec 011 (product scan, v0.0.11, 2026-09-11): implementation delivered, three live scans run,
+  Opus verifier fix batch applied, a post-batch live re-check pending.** A read-only errand
+  (`scripts/product_scan.py`, logic in `headless/products.py`) that ranks Amazon (primary) and,
+  opt-in, Home Depot search results for a product query by a Bayesian-shrunk rating minus a
+  price-per-foot penalty, tiered by material (plastic, metal, other). Recon 2026-09-11 found
+  Walmart, Lowe's, Google Shopping, and Menards all refuse headless Chrome outright (see the site
+  traps above), so Walmart is read only as a `--reference-url`/`--reference` listing - never
+  searched - and the other three are never read at all; Home Depot ships opt-in because a repeated
+  visit within a session shows an `Error Page` wall. `parse_attributes` turns a listing's own
+  title into height, length, material, stake count/material, a no-dig flag, and an exclusion
+  reason by pure regex (no LLM), exercised against real recon titles in `tests/test_products.py`.
+  `--apply` is a hidden flag, always refused; there is no apply mode and none may be added. First
+  delivery: 930 passed, 9 skipped (up from 814); `verify_structure.py` SUCCESS; `scan_secrets.py
+  --paths` clean.
+  **Opus verifier fix batch, same day, applied after the three live scans above: 3 BLOCK, 7
+  FIX-FIRST, 10 MINOR, 4 NIT, all resolved.** The three live runs exposed real-title parsing bugs
+  the recon-time unit tests had not caught: ten (then seventeen) plastic rolls tiered stone-look
+  only because their title listed "Paver" among its uses (the material rule now requires an actual
+  decorative-stone claim); an uncounted stake phrase ("with Metal Stakes") survived to mistier a
+  plastic roll as metal (every stake phrase is now stripped, counted or not); `4'' X 100'` parsed
+  as 4 feet by 100 feet instead of 4 inches by 100 feet (the foot mark now requires a LONE `'`); an
+  `L x W x H` triple could let an earlier number claim a later dimension's own `H` marker, and a
+  fixed-length context window could manufacture a false `L` match by cutting off mid-word (both
+  windows now stop at the next digit or the end of the current word); a literal `|` inside a real
+  title (the Bonviee recon title carries three) broke 28 of 78 Markdown table rows (escaped now);
+  excluded and height-dropped listings were counted but never named (`rank()` now returns a
+  `RankResult` and both reports list each one by title); the report file name carried only the
+  date, so two different queries the same UTC day overwrote each other (now
+  `product-scan-<slug>-<date>`); `--check`'s own selectors were page-level, not card-scoped. Also
+  fixed: `parse_reference_literal` accepted a zero/negative price or length, gained an optional
+  rating/review-count 4th/5th part; a decimal fraction could be read as an integer stake count;
+  `position` reset to 0 every page instead of running per site across pages; the spec/contract's
+  own stdout lines, refusal wordings, report headings, and JSON shape were reconciled against the
+  shipped code (document-by-document, in `specs/011-product-scan/`); household-role references replaced with "a listing the Director was sent" throughout this delivery,
+  since the repository is public. Test fixtures were also replaced with full, untruncated real
+  titles from the three live-run JSON files (a scratch re-parse of every title in those three files
+  found 46 of 204 distinct listings changed material, tier, height, length, or stake count under
+  the fixed parser - the delta the fix batch itself intended). Unit suite after the fix batch and the post-batch fence-precision fix: 1004
+  passed, 9 skipped; `verify_structure.py` SUCCESS; `scan_secrets.py --paths` clean on every file
+  the batch touched. The orchestrator's own live re-runs are DONE (rows above): `--check` 4 found, and the three final
+  scans, including the `--reference-url`/`--reference` comparison against the listing the Director
+  was sent. Post-batch fence-precision fix applied in-session after the first exclusion audit (17 of
+  39 excluded titles were genuine edging; research.md D-fence-precision). Known residuals, left as
+  documented limits: a stake count can be read from a nearby figure ("35Pcs 8 Gauge Metal Spikes"
+  -> 8), and the per-piece caveat fires on multi-roll kits whose title states pieces but no total
+  ("3pack, 33ft/Pack" -> 100 ft flagged per piece). Open: whether Target is worth a later spec once
+  it exposes stable card selectors; Home Depot stays opt-in until its error-page behavior is
+  re-checked on a fresh day.
+  Session id for the ledger: `fe9be82f-83d7-42a4-95e4-00ad075f4fe6` (2026-09-11, spec 011 product
+  scan).
 - **Spec 009 (activity scan, v0.0.9, 2026-09-09): implementation delivered, first live scans run,
   Director UAT pending.** A read-only errand (`scripts/activity_scan.py`, logic in
   `headless/activities.py`) that ranks public venues around a CLI-supplied point for an evening
