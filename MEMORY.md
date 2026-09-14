@@ -129,6 +129,7 @@ Record each working session's id here so it can be resumed with `claude --resume
 
 | Date | Session id | Notes |
 | :--- | :--- | :--- |
+| 2026-09-11 | `fe9be82f-83d7-42a4-95e4-00ad075f4fe6` | Spec 011 product scan (v0.0.11): recon of seven retail sites, parallel spec + implementation builders, Opus verification and fix batch, fence-precision fix, three live scans, merge and push; then `CAPABILITIES.md` quick read (v0.0.11.1) and its gated update rule (v0.0.11.2) on 2026-09-14 |
 | 2026-08-24 | `09a98ca6-0de1-49dc-83fb-d42e642c4b02` | Bootstrapped the repo from AVF (Director layer, Spec Kit 1.0.2), created the GitHub repo, spec 001 foundation |
 
 ## Open items
