@@ -8,7 +8,8 @@ turn to act.
 
 Built on the [Agentic-Vibe-Fleet](https://github.com/mananpatel2491/Agentic-Vibe-Fleet)
 methodology. The constitution is `CLAUDE.md`; the pattern registry is `PATTERNS.md`; the
-architecture map is `Project_Structure.md`.
+architecture map is `Project_Structure.md`. For a one-screen answer to "what can this repo
+do right now", read `CAPABILITIES.md`.
 
 ## First-time setup
 

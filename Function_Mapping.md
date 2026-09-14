@@ -30,3 +30,6 @@ here either, matching `check_env.py`'s own precedent.
 3. **Delete**: when an errand is retired (also remove its `--check` from the gate).
 4. **Audit**: every handoff point in this table must match the `HANDOFF` constant declared in
    the script; `--check` output must list the same selectors the row implies.
+5. **Quick read**: `CAPABILITIES.md` (repo root) is the one-screen summary of what the repository
+   can do. Update it in the same commit as any Add, Update, or Delete above, and bump its
+   version line at every release merge.

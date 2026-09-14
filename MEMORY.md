@@ -30,6 +30,8 @@ and what is open.
   see the Google Maps connector open item below.)
 - Tooling gaps: `pwsh` absent, so `../worktree.ps1` cannot run; create worktrees by hand at
   `../worktrees/Headless/<branch>` with `git worktree add`.
+- Quick read: `CAPABILITIES.md` at the repo root is the one-screen capability summary (what runs,
+  what is in progress, what refuses headless Chrome). Keep it current with every errand change.
 - Commit safety gate active: `core.hooksPath=.githooks` must be set in every clone/worktree
   (see README); CI scans full history on every push.
 
