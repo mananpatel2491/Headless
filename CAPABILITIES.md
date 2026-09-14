@@ -1,8 +1,10 @@
 # Headless - Capabilities at a glance
 
 One screen: what this repository can do right now, what is half-built, and what is not built.
-Current as of **v0.0.11** (main `357f60c`, 2026-09-14). Update this file in the same commit as
-any errand you add, change, or retire (`Function_Mapping.md`, maintenance rule 5).
+Current as of **v0.0.11** (main `357f60c`, 2026-09-14). Update this file only when a commit adds,
+changes, or retires a capability (`Function_Mapping.md`, maintenance rule 5); a fix, refactor, or
+docs change leaves it untouched, so its version line names the last release that changed what the
+repository can do, not the latest release.
 
 ## Errands you can run today
 

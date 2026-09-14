@@ -30,6 +30,13 @@ here either, matching `check_env.py`'s own precedent.
 3. **Delete**: when an errand is retired (also remove its `--check` from the gate).
 4. **Audit**: every handoff point in this table must match the `HANDOFF` constant declared in
    the script; `--check` output must list the same selectors the row implies.
-5. **Quick read**: `CAPABILITIES.md` (repo root) is the one-screen summary of what the repository
-   can do. Update it in the same commit as any Add, Update, or Delete above, and bump its
-   version line at every release merge.
+5. **Quick read (optional, gated)**: `CAPABILITIES.md` (repo root) is the one-screen summary of
+   what the repository can do. Update it ONLY when the commit carries an eligible enhancement -
+   a capability the Director could not use before, or one he can no longer use. Eligible: a new
+   errand or maintenance script; a new mode, flag, site, or source on an existing errand; a
+   retired errand or mode; a new piece of inherited plumbing (vault, gate, connector, browser
+   behaviour); a site newly proven to render or to refuse; a roadmap item built. Not eligible,
+   leave the file alone: bug fixes, refactors, test-only changes, verifier fix batches that keep
+   the same capability, documentation, and hotfixes. When you do update it, set its version line
+   to the release that carries the change; otherwise the version line stays as it is, even
+   across releases.
